@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DEDE — Disasters</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div class="mob-ov" id="mob-ov"></div>
+<div class="app-shell">
+
+  <!-- ═══ SIDEBAR ═══ -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-status"><span class="brand-status-dot"></span> System Active</div>
+      <div class="brand-name">DEDE</div>
+      <div class="brand-sub">Disaster Evacuation Decision Engine</div>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-group-label">Main</div>
+      <a class="nav-link" data-page="index.html" href="index.html"><span class="ni">⚡</span><span class="nl">Dashboard</span></a>
+      <a class="nav-link" data-page="disasters.html" href="disasters.html"><span class="ni">🌪</span><span class="nl">Disasters</span></a>
+      <a class="nav-link" data-page="zones.html" href="zones.html"><span class="ni">🗺</span><span class="nl">Zones</span></a>
+      <a class="nav-link" data-page="shelters.html" href="shelters.html"><span class="ni">🏕</span><span class="nl">Shelters</span></a>
+      <div class="nav-group-label">Operations</div>
+      <a class="nav-link" data-page="requests.html" href="requests.html"><span class="ni">📋</span><span class="nl">Evac Requests</span></a>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="sys-ok"><span class="sys-ok-dot"></span> All systems operational</div>
+      <div>v1.0 · Spring Boot Backend</div>
+    </div>
+  </aside>
+
+  <!-- ═══ MAIN ═══ -->
+  <div class="main-area">
+    <header class="topbar">
+      <button class="topbar-ham" id="ham">☰</button>
+      <div>
+        <div class="topbar-crumbs">DEDE <span class="topbar-sep">/</span> <span class="crumb-cur">Disasters</span></div>
+        <div class="topbar-heading">Disaster Monitor</div>
+      </div>
+      <div class="topbar-gap"></div>
+      <div class="topbar-clock" id="clock"></div>
+      <div class="topbar-live-pill"><span class="live-pip"></span> LIVE</div>
+    </header>
+
+    <main class="page-content">
+      <div class="page-hero fu fu-1">
+        <div>
+          <h1>Reported <em>Disasters</em></h1>
+          <div class="page-hero-sub">GET /api/disasters · POST /api/disasters</div>
+        </div>
+        <div class="page-hero-actions">
+          <span class="count-chip" id="cnt-disasters">Loading…</span>
+          <button class="ibt" onclick="fetchDisasters()" title="Refresh">↻</button>
+        </div>
+      </div>
+
+      <div class="split fu fu-2">
+
+        <!-- TABLE -->
+        <div class="table-card">
+          <div class="tc-header">
+            <div class="tc-title">🌪 Disaster Events <span class="tc-tag">Live Feed</span></div>
+            <div class="tc-actions">
+              <button class="btn btn-outline btn-sm" onclick="fetchDisasters()">↻ Refresh</button>
+            </div>
+          </div>
+          <div id="tbl-disasters"></div>
+        </div>
+
+        <!-- FORM -->
+        <div class="form-card fu fu-3">
+          <div class="form-card-head">
+            <h3>➕ Add New Disaster</h3>
+            <p>POST /api/disasters</p>
+          </div>
+          <div class="form-body">
+
+            <div class="fg">
+              <label class="fl" for="d-name">Disaster Name <span class="req">*</span></label>
+              <input id="d-name" class="fi" type="text" placeholder="e.g. Cyclone Biparjoy" required />
+            </div>
+
+            <div class="fg">
+              <label class="fl" for="d-type">Disaster Type <span class="req">*</span></label>
+              <select id="d-type" class="fs">
+                <option value="">— Select type —</option>
+                <option>Cyclone</option>
+                <option>Flood</option>
+                <option>Earthquake</option>
+                <option>Wildfire</option>
+                <option>Tsunami</option>
+                <option>Landslide</option>
+                <option>Drought</option>
+                <option>Industrial Accident</option>
+                <option>Other</option>
+              </select>
+            </div>
+
+            <div class="fg">
+              <label class="fl" for="d-severity">Severity Level <span class="req">*</span></label>
+              <select id="d-severity" class="fs">
+                <option value="">— Select severity —</option>
+                <option value="LOW">🟢 Low</option>
+                <option value="MEDIUM">🟠 Medium</option>
+                <option value="HIGH">🔴 High</option>
+                <option value="CRITICAL">🚨 Critical</option>
+              </select>
+            </div>
+
+            <div class="fg">
+              <label class="fl" for="d-region">Affected Region <span class="req">*</span></label>
+              <input id="d-region" class="fi" type="text" placeholder="e.g. Kutch, Gujarat" required />
+            </div>
+
+            <div class="fg">
+              <label class="fl" for="d-desc">Description</label>
+              <input id="d-desc" class="fi" type="text" placeholder="Brief description of the event" />
+            </div>
+
+            <div class="form-sep"></div>
+
+           <div class="form-actions">
+  <button class="btn btn-outline" onclick="resetDisasterForm()">↺ Reset</button>
+  <button class="btn btn-primary" id="d-submit-btn" onclick="handleAddDisaster()">
+    ➕ Add Disaster
+  </button>
+</div>
+
+          </div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', () => fetchDisasters());
+
+  function resetDisasterForm() {
+    ['d-name','d-type','d-severity','d-region','d-desc'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+  }
+
+  async function handleAddDisaster() {
+    const name     = document.getElementById('d-name').value.trim();
+    const type     = document.getElementById('d-type').value;
+    const severity = document.getElementById('d-severity').value;
+    const region   = document.getElementById('d-region').value.trim();
+    const desc     = document.getElementById('d-desc').value.trim();
+
+    if (!name)     { toast('Validation Error', 'Disaster Name is required.', 'error'); return; }
+    if (!type)     { toast('Validation Error', 'Please select a Disaster Type.', 'error'); return; }
+    if (!severity) { toast('Validation Error', 'Please select a Severity Level.', 'error'); return; }
+    if (!region)   { toast('Validation Error', 'Affected Region is required.', 'error'); return; }
+
+    const payload = {
+      disasterName:   name,
+      disasterType:   type,
+      severityLevel:  severity,
+      affectedRegion: region,
+      description:    desc || null,
+    };
+
+    const btn = document.getElementById('d-submit-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Saving…';
+
+    try {
+      await postDisaster(payload);
+      toast('Disaster Added', `"${name}" was saved successfully.`, 'success');
+      resetDisasterForm();
+      fetchDisasters();
+    } catch (err) {
+      toast('Save Failed', err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '➕ Add Disaster';
+    }
+  }
+</script>
+</body>
+</html>

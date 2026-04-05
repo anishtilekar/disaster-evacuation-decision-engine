@@ -9,5 +9,4 @@ public class EvacuationEngineApplication {
     public static void main(String[] args) {
         SpringApplication.run(EvacuationEngineApplication.class, args);
     }
-
 }

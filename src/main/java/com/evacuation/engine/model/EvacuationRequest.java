@@ -3,8 +3,13 @@ package com.evacuation.engine.model;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
 @Entity
 @Table(name = "evacuation_requests")
+@Data
+@NoArgsConstructor
 public class EvacuationRequest {
 
     @Id
@@ -31,7 +36,5 @@ public class EvacuationRequest {
     private LocalDateTime requestTime;
 
     private LocalDateTime evacuationTime;
-
-    public EvacuationRequest() {}
 
 }

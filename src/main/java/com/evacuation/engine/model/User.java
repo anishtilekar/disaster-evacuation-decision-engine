@@ -1,9 +1,13 @@
 package com.evacuation.engine.model;
 
 import jakarta.persistence.*;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
 @Entity
 @Table(name = "users")
+@Data
+@NoArgsConstructor
 public class User {
 
     @Id
@@ -29,7 +33,4 @@ public class User {
 
     private boolean active;
 
-    public User() {}
-
-    // getters and setters
 }

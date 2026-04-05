@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DEDE — Zones</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div class="mob-ov" id="mob-ov"></div>
+<div class="app-shell">
+
+  <!-- ═══ SIDEBAR ═══ -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-status"><span class="brand-status-dot"></span> System Active</div>
+      <div class="brand-name">DEDE</div>
+      <div class="brand-sub">Disaster Evacuation Decision Engine</div>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-group-label">Main</div>
+      <a class="nav-link" data-page="index.html" href="index.html"><span class="ni">⚡</span><span class="nl">Dashboard</span></a>
+      <a class="nav-link" data-page="disasters.html" href="disasters.html"><span class="ni">🌪</span><span class="nl">Disasters</span></a>
+      <a class="nav-link" data-page="zones.html" href="zones.html"><span class="ni">🗺</span><span class="nl">Zones</span></a>
+      <a class="nav-link" data-page="shelters.html" href="shelters.html"><span class="ni">🏕</span><span class="nl">Shelters</span></a>
+      <div class="nav-group-label">Operations</div>
+      <a class="nav-link" data-page="requests.html" href="requests.html"><span class="ni">📋</span><span class="nl">Evac Requests</span></a>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="sys-ok"><span class="sys-ok-dot"></span> All systems operational</div>
+      <div>v1.0 · Spring Boot Backend</div>
+    </div>
+  </aside>
+
+  <!-- ═══ MAIN ═══ -->
+  <div class="main-area">
+    <header class="topbar">
+      <button class="topbar-ham" id="ham">☰</button>
+      <div>
+        <div class="topbar-crumbs">DEDE <span class="topbar-sep">/</span> <span class="crumb-cur">Zones</span></div>
+        <div class="topbar-heading">Zone Registry</div>
+      </div>
+      <div class="topbar-gap"></div>
+      <div class="topbar-clock" id="clock"></div>
+      <div class="topbar-live-pill"><span class="live-pip"></span> LIVE</div>
+    </header>
+
+    <main class="page-content">
+      <div class="page-hero fu fu-1">
+        <div>
+          <h1>Evacuation <em>Zones</em></h1>
+          <div class="page-hero-sub">GET /api/zones · POST /api/zones</div>
+        </div>
+        <div class="page-hero-actions">
+          <span class="count-chip" id="cnt-zones">Loading…</span>
+          <button class="ibt" onclick="fetchZones()" title="Refresh">↻</button>
+        </div>
+      </div>
+
+      <div class="split fu fu-2">
+
+        <!-- TABLE -->
+        <div class="table-card">
+          <div class="tc-header">
+            <div class="tc-title">🗺 Zone Registry <span class="tc-tag">Risk Monitor</span></div>
+            <div class="tc-actions">
+              <button class="btn btn-outline btn-sm" onclick="fetchZones()">↻ Refresh</button>
+            </div>
+          </div>
+          <div id="tbl-zones"></div>
+        </div>
+
+        <!-- FORM -->
+        <div class="form-card fu fu-3">
+          <div class="form-card-head">
+            <h3>➕ Add New Zone</h3>
+            <p>POST /api/zones</p>
+          </div>
+          <div class="form-body">
+
+            <div class="fg">
+              <label class="fl" for="z-name">Zone Name <span class="req">*</span></label>
+              <input id="z-name" class="fi" type="text" placeholder="e.g. Zone A — Coastal Belt" required />
+            </div>
+
+            <div class="fg">
+              <label class="fl" for="z-risk">Risk Level <span class="req">*</span></label>
+              <select id="z-risk" class="fs">
+                <option value="">— Select risk level —</option>
+                <option value="LOW">🟢 Low</option>
+                <option value="MEDIUM">🟠 Medium</option>
+                <option value="HIGH">🔴 High</option>
+                <option value="EXTREME">🚨 Extreme</option>
+              </select>
+            </div>
+
+            <div class="fg">
+              <label class="fl" for="z-pop">Population <span class="req">*</span></label>
+              <input id="z-pop" class="fi" type="number" min="0" placeholder="e.g. 15000" required />
+            </div>
+
+            <div class="fg-row">
+              <div class="fg">
+                <label class="fl" for="z-lat">Latitude</label>
+                <input id="z-lat" class="fi" type="number" step="any" placeholder="e.g. 23.0225" />
+              </div>
+              <div class="fg">
+                <label class="fl" for="z-lng">Longitude</label>
+                <input id="z-lng" class="fi" type="number" step="any" placeholder="e.g. 72.5714" />
+              </div>
+            </div>
+
+            <div class="form-sep"></div>
+
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-outline" style="flex:0 0 auto;" onclick="resetZoneForm()">↺ Reset</button>
+              <button class="btn btn-primary btn-full" id="z-submit-btn" onclick="handleAddZone()">
+                ➕ Add Zone
+              </button>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', () => fetchZones());
+
+  function resetZoneForm() {
+    ['z-name','z-risk','z-pop','z-lat','z-lng'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+  }
+
+  async function handleAddZone() {
+    const name = document.getElementById('z-name').value.trim();
+    const risk = document.getElementById('z-risk').value;
+    const pop  = document.getElementById('z-pop').value;
+    const lat  = document.getElementById('z-lat').value;
+    const lng  = document.getElementById('z-lng').value;
+
+    if (!name) { toast('Validation Error', 'Zone Name is required.', 'error'); return; }
+    if (!risk) { toast('Validation Error', 'Please select a Risk Level.', 'error'); return; }
+    if (!pop)  { toast('Validation Error', 'Population is required.', 'error'); return; }
+
+    const payload = {
+      zoneName:   name,
+      riskLevel:  risk,
+      population: parseInt(pop),
+      latitude:   lat  ? parseFloat(lat)  : null,
+      longitude:  lng  ? parseFloat(lng)  : null,
+    };
+
+    const btn = document.getElementById('z-submit-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Saving…';
+
+    try {
+      await postZone(payload);
+      toast('Zone Added', `"${name}" was saved successfully.`, 'success');
+      resetZoneForm();
+      fetchZones();
+    } catch (err) {
+      toast('Save Failed', err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '➕ Add Zone';
+    }
+  }
+</script>
+</body>
+</html>

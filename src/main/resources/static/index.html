@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DEDE — Command Dashboard</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div class="mob-ov" id="mob-ov"></div>
+<div class="app-shell">
+
+  <!-- ═══ SIDEBAR ═══ -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-status"><span class="brand-status-dot"></span> System Active</div>
+      <div class="brand-name">DEDE</div>
+      <div class="brand-sub">Disaster Evacuation Decision Engine</div>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-group-label">Main</div>
+      <a class="nav-link" data-page="index.html" href="index.html"><span class="ni">⚡</span><span class="nl">Dashboard</span></a>
+      <a class="nav-link" data-page="disasters.html" href="disasters.html"><span class="ni">🌪</span><span class="nl">Disasters</span></a>
+      <a class="nav-link" data-page="zones.html" href="zones.html"><span class="ni">🗺</span><span class="nl">Zones</span></a>
+      <a class="nav-link" data-page="shelters.html" href="shelters.html"><span class="ni">🏕</span><span class="nl">Shelters</span></a>
+      <div class="nav-group-label">Operations</div>
+      <a class="nav-link" data-page="requests.html" href="requests.html"><span class="ni">📋</span><span class="nl">Evac Requests</span></a>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="sys-ok"><span class="sys-ok-dot"></span> All systems operational</div>
+      <div>v1.0 · Spring Boot Backend</div>
+    </div>
+  </aside>
+
+  <!-- ═══ MAIN ═══ -->
+  <div class="main-area">
+
+    <!-- Topbar -->
+    <header class="topbar">
+      <button class="topbar-ham" id="ham">☰</button>
+      <div>
+        <div class="topbar-crumbs">DEDE <span class="topbar-sep">/</span> <span class="crumb-cur">Dashboard</span></div>
+        <div class="topbar-heading">Command Dashboard</div>
+      </div>
+      <div class="topbar-gap"></div>
+      <div class="topbar-clock" id="clock"></div>
+      <div class="topbar-live-pill"><span class="live-pip"></span> LIVE</div>
+    </header>
+
+    <!-- Content -->
+    <main class="page-content">
+
+      <!-- Stat Cards -->
+      <div class="stats-row fu fu-1">
+        <div class="stat-card">
+          <div class="sc-stripe blue"></div>
+          <div class="sc-top">
+            <div class="sc-label">Active Disasters</div>
+            <div class="sc-icon">🌪</div>
+          </div>
+          <div class="sc-val loading" id="stat-disasters">…</div>
+          <div class="sc-foot">Reported incidents</div>
+        </div>
+        <div class="stat-card">
+          <div class="sc-stripe amber"></div>
+          <div class="sc-top">
+            <div class="sc-label">Affected Zones</div>
+            <div class="sc-icon">🗺</div>
+          </div>
+          <div class="sc-val loading" id="stat-zones">…</div>
+          <div class="sc-foot">Monitored areas</div>
+        </div>
+        <div class="stat-card">
+          <div class="sc-stripe green"></div>
+          <div class="sc-top">
+            <div class="sc-label">Shelters Ready</div>
+            <div class="sc-icon">🏕</div>
+          </div>
+          <div class="sc-val loading" id="stat-shelters">…</div>
+          <div class="sc-foot">Operational shelters</div>
+        </div>
+        <div class="stat-card">
+          <div class="sc-stripe coral"></div>
+          <div class="sc-top">
+            <div class="sc-label">Evac Requests</div>
+            <div class="sc-icon">📋</div>
+          </div>
+          <div class="sc-val loading" id="stat-requests">…</div>
+          <div class="sc-foot">Submitted requests</div>
+        </div>
+      </div>
+
+      <!-- Section label -->
+      <div class="section-title fu fu-2">Quick Access</div>
+
+      <!-- Nav Cards -->
+      <div class="navcards fu fu-3">
+
+        <a class="navcard c-blue" href="disasters.html">
+          <div class="navcard-ico c-blue">🌪</div>
+          <div class="navcard-title">Disasters</div>
+          <div class="navcard-desc">View and log disaster events. Track type, severity, and affected regions in real-time.</div>
+          <div class="navcard-cta">Open Module <span>→</span><span class="navcard-num" id="nc-disasters">—</span></div>
+        </a>
+
+        <a class="navcard c-amber" href="zones.html">
+          <div class="navcard-ico c-amber">🗺</div>
+          <div class="navcard-title">Zones</div>
+          <div class="navcard-desc">Manage evacuation zones. Monitor risk levels, population counts, and geographic data.</div>
+          <div class="navcard-cta">Open Module <span>→</span><span class="navcard-num" id="nc-zones">—</span></div>
+        </a>
+
+        <a class="navcard c-green" href="shelters.html">
+          <div class="navcard-ico c-green">🏕</div>
+          <div class="navcard-title">Shelters</div>
+          <div class="navcard-desc">View shelter capacity, occupancy levels, and medical facility availability across the network.</div>
+          <div class="navcard-cta">Open Module <span>→</span><span class="navcard-num" id="nc-shelters">—</span></div>
+        </a>
+
+        <a class="navcard c-coral" href="requests.html">
+          <div class="navcard-ico c-coral">📋</div>
+          <div class="navcard-title">Evacuation Requests</div>
+          <div class="navcard-desc">Submit and track evacuation requests. Specify medical needs, people count, and transport requirements.</div>
+          <div class="navcard-cta">Open Module <span>→</span><span class="navcard-num" id="nc-requests">—</span></div>
+        </a>
+
+      </div>
+
+    </main>
+  </div><!-- /main-area -->
+</div><!-- /app-shell -->
+
+<script src="app.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    loadDashboardStats();
+  });
+</script>
+</body>
+</html>
