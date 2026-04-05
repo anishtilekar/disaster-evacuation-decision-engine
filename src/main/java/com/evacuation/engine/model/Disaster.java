@@ -1,7 +1,6 @@
 package com.evacuation.engine.model;
 
 import jakarta.persistence.*;
-import jakarta.validation.constraints.*;
 import java.time.LocalDateTime;
 
 import lombok.Data;
@@ -17,28 +16,22 @@ public class Disaster {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long disasterId;
 
-    @NotBlank
     @Column(nullable = false)
     private String disasterName;
 
-    @NotBlank
     private String disasterType;
 
     @Column(length = 500)
     private String description;
 
-    @NotBlank
     private String severityLevel;
 
-    @NotNull
     private LocalDateTime startTime;
 
     private LocalDateTime endTime;
 
-    @NotBlank
     private String status;
 
-    @NotBlank
     private String affectedRegion;
 
     private double latitude;
@@ -54,6 +47,23 @@ public class Disaster {
 
     @PrePersist
     protected void onCreate() {
+
+        if (startTime == null) {
+            startTime = LocalDateTime.now();
+        }
+
+        if (severityLevel == null) {
+            severityLevel = "MEDIUM";
+        }
+
+        if (status == null) {
+            status = "ACTIVE";
+        }
+
+        if (affectedRegion == null) {
+            affectedRegion = "UNKNOWN";
+        }
+
         createdAt = LocalDateTime.now();
     }
 

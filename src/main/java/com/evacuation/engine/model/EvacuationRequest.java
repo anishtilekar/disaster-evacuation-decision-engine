@@ -17,12 +17,15 @@ public class EvacuationRequest {
     private Long requestId;
 
     @ManyToOne
+    @JoinColumn(name = "user_id")
     private User user;
 
     @ManyToOne
+    @JoinColumn(name = "zone_id")
     private Zone zone;
 
     @ManyToOne
+    @JoinColumn(name = "shelter_id")
     private Shelter assignedShelter;
 
     private String requestStatus;
@@ -37,4 +40,20 @@ public class EvacuationRequest {
 
     private LocalDateTime evacuationTime;
 
+
+    @PrePersist
+    protected void onCreate() {
+
+        if (requestTime == null) {
+            requestTime = LocalDateTime.now();
+        }
+
+        if (requestStatus == null) {
+            requestStatus = "PENDING";
+        }
+
+        if (numberOfPeople == 0) {
+            numberOfPeople = 1;
+        }
+    }
 }
