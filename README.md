@@ -382,10 +382,10 @@ curl -X POST http://localhost:8080/api/shelters \
 
 ## 👨‍💻 Author
 
-**Your Name**
-- 🌐 GitHub: [@your-username](https://github.com/your-username)
-- 💼 LinkedIn: [linkedin.com/in/your-profile](https://linkedin.com/in/your-profile)
-- 📧 Email: your.email@example.com
+Anish Tilekar
+- 🌐 GitHub: https://github.com/anishtilekar
+- 💼 LinkedIn: linkedin.com/in/anish-tilekar-5310a627b
+- 📧 Email: anishtilekar08@gmail.com
 
 ---
 
