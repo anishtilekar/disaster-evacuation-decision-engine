@@ -297,7 +297,7 @@ Make sure you have the following installed:
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/your-username/disaster-evacuation-engine.git
+git clone https://github.com/anishtilekar/disaster-evacuation-engine.git
 cd disaster-evacuation-engine
 ```
 
@@ -384,7 +384,7 @@ curl -X POST http://localhost:8080/api/shelters \
 
 Anish Tilekar
 - 🌐 GitHub: https://github.com/anishtilekar
-- 💼 LinkedIn: linkedin.com/in/anish-tilekar-5310a627b
+- 💼 LinkedIn: linkedin.com/in/anish-tilekar-5310a627b/
 - 📧 Email: anishtilekar08@gmail.com
 
 ---
