@@ -1,4 +1,4 @@
-package com.evacuation.engine.model;
+package com.evacuation.engine.model.enums;
 
 public enum NodeType {
     INTERSECTION,
