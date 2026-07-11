@@ -7,6 +7,7 @@ import lombok.*;
 
 import com.evacuation.engine.model.enums.SeverityLevel;
 import com.evacuation.engine.model.enums.DisasterStatus;
+import com.evacuation.engine.model.enums.DisasterType;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;

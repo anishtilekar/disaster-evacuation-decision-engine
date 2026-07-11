@@ -6,6 +6,7 @@ import jakarta.validation.constraints.*;
 import lombok.*;
 
 import com.evacuation.engine.model.enums.NotificationStatus;
+import com.evacuation.engine.model.enums.NotificationType;
 
 import java.time.LocalDateTime;
 import java.util.Objects;
