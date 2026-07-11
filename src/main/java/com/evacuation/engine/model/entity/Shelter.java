@@ -4,6 +4,8 @@ import jakarta.persistence.*;
 import jakarta.validation.constraints.*;
 import lombok.*;
 
+import com.evacuation.engine.model.enums.ShelterStatus;
+
 import java.time.LocalDateTime;
 import java.util.Objects;
 

@@ -7,6 +7,7 @@ import lombok.*;
 
 
 import com.evacuation.engine.model.enums.EvacuationStatus;
+import com.evacuation.engine.model.enums.EvacuationPriority;
 
 import java.time.LocalDateTime;
 import java.util.Objects;

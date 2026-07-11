@@ -5,6 +5,8 @@ import jakarta.persistence.*;
 import jakarta.validation.constraints.*;
 import lombok.*;
 
+import com.evacuation.engine.model.enums.NodeType;
+
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
