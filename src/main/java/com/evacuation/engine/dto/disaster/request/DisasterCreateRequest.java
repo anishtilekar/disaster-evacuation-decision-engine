@@ -14,6 +14,8 @@ import lombok.Setter;
 
 import com.evacuation.engine.model.enums.DisasterType;
 import com.evacuation.engine.model.enums.SeverityLevel;
+import com.evacuation.engine.validation.disaster.HasRawCoordinates;
+import com.evacuation.engine.validation.disaster.ValidRawCoordinate;
 
 import java.time.LocalDateTime;
 
@@ -22,7 +24,8 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class DisasterCreateRequest {
+@ValidRawCoordinate
+public class DisasterCreateRequest implements HasRawCoordinates {
 
     @NotBlank(message = "Disaster name is required")
     @Size(max = 150, message = "Disaster name cannot exceed 150 characters")

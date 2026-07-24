@@ -11,13 +11,16 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import com.evacuation.engine.model.enums.RiskLevel;
+import com.evacuation.engine.validation.disaster.HasRawCoordinates;
+import com.evacuation.engine.validation.disaster.ValidRawCoordinate;
 
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class DisasterZoneRequest {
+@ValidRawCoordinate
+public class DisasterZoneRequest implements HasRawCoordinates {
 
     @NotNull(message = "Disaster ID is required")
     private Long disasterId;

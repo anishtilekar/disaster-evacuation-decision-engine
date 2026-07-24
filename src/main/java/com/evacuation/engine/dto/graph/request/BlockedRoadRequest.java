@@ -10,6 +10,7 @@ import lombok.Setter;
 
 import com.evacuation.engine.model.enums.BlockageReason;
 import com.evacuation.engine.model.enums.SeverityLevel;
+import com.evacuation.engine.validation.graph.ValidBlockedRoadTimeRange;
 
 import java.time.LocalDateTime;
 
@@ -18,6 +19,7 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
+@ValidBlockedRoadTimeRange
 public class BlockedRoadRequest {
 
     @NotNull(message = "Disaster ID is required")
