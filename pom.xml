@@ -21,6 +21,9 @@ https://maven.apache.org/xsd/maven-4.0.0.xsd">
 
 <properties>
     <java.version>17</java.version>
+    <mapstruct.version>1.6.3</mapstruct.version>
+    <lombok.version>1.18.32</lombok.version>
+    <lombok-mapstruct-binding.version>0.2.0</lombok-mapstruct-binding.version>
 </properties>
 
 <dependencies>
@@ -54,8 +57,15 @@ https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <dependency>
         <groupId>org.projectlombok</groupId>
         <artifactId>lombok</artifactId>
-        <version>1.18.32</version>
+        <version>${lombok.version}</version>
         <scope>provided</scope>
+    </dependency>
+
+    <!-- MapStruct -->
+    <dependency>
+        <groupId>org.mapstruct</groupId>
+        <artifactId>mapstruct</artifactId>
+        <version>${mapstruct.version}</version>
     </dependency>
 
     <!-- Testing -->
@@ -98,7 +108,17 @@ https://maven.apache.org/xsd/maven-4.0.0.xsd">
                     <path>
                         <groupId>org.projectlombok</groupId>
                         <artifactId>lombok</artifactId>
-                        <version>1.18.32</version>
+                        <version>${lombok.version}</version>
+                    </path>
+                    <path>
+                        <groupId>org.projectlombok</groupId>
+                        <artifactId>lombok-mapstruct-binding</artifactId>
+                        <version>${lombok-mapstruct-binding.version}</version>
+                    </path>
+                    <path>
+                        <groupId>org.mapstruct</groupId>
+                        <artifactId>mapstruct-processor</artifactId>
+                        <version>${mapstruct.version}</version>
                     </path>
                 </annotationProcessorPaths>
 
