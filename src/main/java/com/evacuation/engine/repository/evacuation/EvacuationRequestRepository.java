@@ -27,13 +27,13 @@ public interface EvacuationRequestRepository extends JpaRepository<EvacuationReq
 
     // Find evacuation requests originating from a specific road node
     // Used by route optimization and graph traversal
-    List<EvacuationRequest> findBySourceRoadNode_RoadNodeId(Long roadNodeId);
+    List<EvacuationRequest> findBySourceRoadNode_NodeId(Long nodeId);
 
 
     // Find active evacuation requests from a disaster zone
     // Useful for zone-wise evacuation management
-    List<EvacuationRequest> findByDisasterZone_DisasterZoneIdAndStatus(
-            Long disasterZoneId,
+    List<EvacuationRequest> findByDisasterZone_ZoneIdAndStatus(
+            Long zoneId,
             EvacuationStatus status
     );
 
