@@ -46,6 +46,12 @@ public class GraphEngineProperties {
     private final Osm osm = new Osm();
 
     /**
+     * Space-time model settings. Populated in place by JavaBean binding via its getter, so the field
+     * is intentionally {@code final}.
+     */
+    private final Time time = new Time();
+
+    /**
      * OpenStreetMap import, ward, and shelter settings, bound from {@code graph.osm.*}.
      */
     @Getter
@@ -89,5 +95,30 @@ public class GraphEngineProperties {
                 "school", 500,
                 "community_centre", 150
         ));
+    }
+
+    /**
+     * Time-model levers for the STRIDE space-time engine, bound from {@code graph.time.*}.
+     *
+     * <p>These are the operator's knobs on the discretised time model: how wide each time bucket is,
+     * how far ahead the rolling plan looks, and how much lethality-free margin an arc must retain
+     * after a platoon clears it. Externalising them lets an operator trade resolution against horizon
+     * and tune the safety margin per deployment without a code change.
+     */
+    @Getter
+    @Setter
+    public static class Time {
+
+        /** Bucket width, in seconds — the granularity of the discretised time axis. */
+        private int deltaSeconds = 15;
+
+        /** Rolling planning horizon, in buckets (160 × 15s = 40 minutes). */
+        private int horizonBuckets = 160;
+
+        /**
+         * Beta safety margin, in buckets (8 × 15s = 2 minutes): an arc must stay non-lethal for this
+         * many buckets after a platoon exits it.
+         */
+        private int hazardMarginBuckets = 8;
     }
 }
