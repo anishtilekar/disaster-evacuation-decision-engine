@@ -51,6 +51,7 @@ class HazardTimelineCompilerTest {
         double[] nodeLon = {73.8500, 73.8600};
         NodeType[] nodeType = {NodeType.INTERSECTION, NodeType.INTERSECTION};
         boolean[] nodeActive = {true, true};
+        double[] nodeCapacityPersonsPerHour = {1000.0, 1000.0};
         Map<Long, Integer> nodeIdToIndex = Map.of(10L, 0, 20L, 1);
 
         // CSR: node 0's slots = [0,1), node 1's slots = [1,2); both slots share BLOCKED_EDGE_DB_ID.
@@ -59,12 +60,13 @@ class HazardTimelineCompilerTest {
         long[] edgeDbId = {BLOCKED_EDGE_DB_ID, BLOCKED_EDGE_DB_ID};
         double[] edgeDistanceKm = {1.0, 1.0};
         double[] edgeTimeMin = {2.0, 2.0};
+        double[] edgeCapacityPersonsPerHour = {1000.0, 1000.0};
         RoadStatus[] edgeBaseStatus = {RoadStatus.OPEN, RoadStatus.OPEN};
 
         return new GraphSnapshot(
-                dbNodeId, nodeName, nodeLat, nodeLon, nodeType, nodeActive, nodeIdToIndex,
-                edgeHead, edgeTo, edgeDbId, edgeDistanceKm, edgeTimeMin, edgeBaseStatus,
-                List.of(), GRAPH_VERSION, LocalDateTime.now());
+                dbNodeId, nodeName, nodeLat, nodeLon, nodeType, nodeActive, nodeCapacityPersonsPerHour,
+                nodeIdToIndex, edgeHead, edgeTo, edgeDbId, edgeDistanceKm, edgeTimeMin,
+                edgeCapacityPersonsPerHour, edgeBaseStatus, List.of(), GRAPH_VERSION, LocalDateTime.now());
     }
 
     private TimeModel defaultTimeModel() {

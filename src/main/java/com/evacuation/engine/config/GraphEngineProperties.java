@@ -174,5 +174,14 @@ public class GraphEngineProperties {
          * class note on why this is a penalty rather than a bonus.
          */
         private double medicalMismatchPenaltySeconds = 180.0;
+
+        /**
+         * Eta — the fraction of an arc's nominal capacity {@code c_a} the ledger is actually allowed
+         * to reserve against, e.g. 0.85 reserves against 85% of {@code c_a} and leaves the rest as
+         * headroom. Real compliance with a computed plan is uncertain, and this is the design's
+         * documented mitigation: plan against {@code eta * c_a} rather than modelling human behaviour
+         * this project has no data to support. Must be in {@code (0, 1]}.
+         */
+        private double capacityHeadroom = 0.85;
     }
 }

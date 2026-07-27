@@ -48,6 +48,13 @@ public class GraphBuilder {
     /** A shelter is snapped only to a node within this distance; farther matches are implausible. */
     private static final double MAX_SNAP_DISTANCE_KM = 2.0;
 
+    /**
+     * Fallback waiting capacity for a node with no incident edges at all (a degenerate case — an
+     * isolated node has no useful role in routing anyway — but every node still needs a defined
+     * capacity, so this avoids a silent 0.0 that would make waiting there always infeasible).
+     */
+    private static final double DEFAULT_NODE_CAPACITY_PERSONS_PER_HOUR = 500.0;
+
     private final RoadNodeRepository roadNodeRepository;
     private final RoadEdgeRepository roadEdgeRepository;
     private final ShelterRepository shelterRepository;
@@ -55,7 +62,7 @@ public class GraphBuilder {
 
     /** One directed CSR slot, before it is placed into the contiguous CSR arrays. */
     private record SlotDescriptor(int fromIndex, int toIndex, long edgeDbId, double distanceKm,
-                                  double timeMin, RoadStatus status) {
+                                  double timeMin, double capacityPersonsPerHour, RoadStatus status) {
     }
 
     /**
@@ -114,11 +121,14 @@ public class GraphBuilder {
             long edgeDbId = edge.getEdgeId();
             double distanceKm = edge.getDistanceKm();
             double timeMin = edge.getEstimatedTravelTimeMinutes();
+            double capacityPersonsPerHour = edge.getCapacityPersonsPerHour();
             RoadStatus status = edge.getRoadStatus();
 
-            slots.add(new SlotDescriptor(fromIndex, toIndex, edgeDbId, distanceKm, timeMin, status));
+            slots.add(new SlotDescriptor(
+                    fromIndex, toIndex, edgeDbId, distanceKm, timeMin, capacityPersonsPerHour, status));
             if (Boolean.TRUE.equals(edge.getBidirectional())) {
-                slots.add(new SlotDescriptor(toIndex, fromIndex, edgeDbId, distanceKm, timeMin, status));
+                slots.add(new SlotDescriptor(
+                        toIndex, fromIndex, edgeDbId, distanceKm, timeMin, capacityPersonsPerHour, status));
             }
         }
 
@@ -137,6 +147,7 @@ public class GraphBuilder {
         long[] edgeDbId = new long[slotCount];
         double[] edgeDistanceKm = new double[slotCount];
         double[] edgeTimeMin = new double[slotCount];
+        double[] edgeCapacityPersonsPerHour = new double[slotCount];
         RoadStatus[] edgeBaseStatus = new RoadStatus[slotCount];
 
         for (SlotDescriptor slot : slots) {
@@ -145,16 +156,32 @@ public class GraphBuilder {
             edgeDbId[pos] = slot.edgeDbId();
             edgeDistanceKm[pos] = slot.distanceKm();
             edgeTimeMin[pos] = slot.timeMin();
+            edgeCapacityPersonsPerHour[pos] = slot.capacityPersonsPerHour();
             edgeBaseStatus[pos] = slot.status();
         }
 
-        // 6. Intermediate snapshot (no shelters) — only so shelters have something to snap against.
-        GraphSnapshot intermediate = new GraphSnapshot(
-                dbNodeId, nodeName, nodeLat, nodeLon, nodeType, nodeActive, nodeIndexView,
-                edgeHead, edgeTo, edgeDbId, edgeDistanceKm, edgeTimeMin, edgeBaseStatus,
-                List.of(), 0L, LocalDateTime.now());
+        // 6. Node waiting capacity: the max capacity among each node's incident edges (both endpoints
+        // of every slot, so a one-way edge's capacity still reaches the node it only ends at, not
+        // just the node it starts from — the CSR's own outgoing-only adjacency would miss that).
+        // OSM has no tag for "how many people can occupy this junction"; bounding it by the largest
+        // connected approach is a defensible derived estimate, not a claimed measurement.
+        double[] nodeCapacityPersonsPerHour = new double[nodeCount];
+        Arrays.fill(nodeCapacityPersonsPerHour, DEFAULT_NODE_CAPACITY_PERSONS_PER_HOUR);
+        for (SlotDescriptor slot : slots) {
+            double capacity = slot.capacityPersonsPerHour();
+            nodeCapacityPersonsPerHour[slot.fromIndex()] =
+                    Math.max(nodeCapacityPersonsPerHour[slot.fromIndex()], capacity);
+            nodeCapacityPersonsPerHour[slot.toIndex()] =
+                    Math.max(nodeCapacityPersonsPerHour[slot.toIndex()], capacity);
+        }
 
-        // 7. Snap each shelter to its nearest node within the cap; skip (warn) the unreachable ones.
+        // 7. Intermediate snapshot (no shelters) — only so shelters have something to snap against.
+        GraphSnapshot intermediate = new GraphSnapshot(
+                dbNodeId, nodeName, nodeLat, nodeLon, nodeType, nodeActive, nodeCapacityPersonsPerHour,
+                nodeIndexView, edgeHead, edgeTo, edgeDbId, edgeDistanceKm, edgeTimeMin,
+                edgeCapacityPersonsPerHour, edgeBaseStatus, List.of(), 0L, LocalDateTime.now());
+
+        // 8. Snap each shelter to its nearest node within the cap; skip (warn) the unreachable ones.
         List<Shelter> shelters = shelterRepository.findAll();
         List<GraphSnapshot.ShelterRef> shelterRefs = new ArrayList<>(shelters.size());
         int skippedShelters = 0;
@@ -181,11 +208,11 @@ public class GraphBuilder {
                     shelter.getLongitude()));
         }
 
-        // 8. Final snapshot with the resolved shelters and a real, monotonic version.
+        // 9. Final snapshot with the resolved shelters and a real, monotonic version.
         GraphSnapshot snapshot = new GraphSnapshot(
-                dbNodeId, nodeName, nodeLat, nodeLon, nodeType, nodeActive, nodeIndexView,
-                edgeHead, edgeTo, edgeDbId, edgeDistanceKm, edgeTimeMin, edgeBaseStatus,
-                Collections.unmodifiableList(shelterRefs),
+                dbNodeId, nodeName, nodeLat, nodeLon, nodeType, nodeActive, nodeCapacityPersonsPerHour,
+                nodeIndexView, edgeHead, edgeTo, edgeDbId, edgeDistanceKm, edgeTimeMin,
+                edgeCapacityPersonsPerHour, edgeBaseStatus, Collections.unmodifiableList(shelterRefs),
                 System.currentTimeMillis(), LocalDateTime.now());
 
         log.info("Built graph snapshot: {} nodes, {} edge slots, {} shelters snapped, {} shelters skipped{}",

@@ -120,6 +120,9 @@ class TimeExpandedDijkstraTest {
                 NodeType.INTERSECTION, NodeType.INTERSECTION
         };
         boolean[] nodeActive = {true, true, true, true};
+        // Capacity plays no part in these tests either; a uniform, generously large rate keeps it
+        // a non-factor, same as the edge array below.
+        double[] nodeCapacityPersonsPerHour = {1000.0, 1000.0, 1000.0, 1000.0};
         Map<Long, Integer> nodeIdToIndex = Map.of(10L, 0, 20L, 1, 30L, 2, 40L, 3);
 
         // CSR: node 0's slots = [0,2), node 1's = [2,3), node 2's = [3,4), node 3's = [4,4).
@@ -132,6 +135,9 @@ class TimeExpandedDijkstraTest {
         double[] edgeDistanceKm = {1.0, 0.4, 1.0, 0.4};
         // 1.5 min -> ceil(90/15) = 6 buckets; 0.5 min -> ceil(30/15) = 2 buckets.
         double[] edgeTimeMin = {1.5, 0.5, 1.5, 0.5};
+        // Capacity plays no part in these tests (Phase 2 predates the reservation ledger); a
+        // uniform, generously large rate keeps it a non-factor.
+        double[] edgeCapacityPersonsPerHour = {1000.0, 1000.0, 1000.0, 1000.0};
         RoadStatus[] edgeBaseStatus = {
                 RoadStatus.OPEN, RoadStatus.OPEN, RoadStatus.OPEN, RoadStatus.OPEN
         };
@@ -141,9 +147,10 @@ class TimeExpandedDijkstraTest {
                 100, false, 18.5000, 73.8600);
 
         return new GraphSnapshot(
-                dbNodeId, nodeName, nodeLat, nodeLon, nodeType, nodeActive, nodeIdToIndex,
-                edgeHead, edgeTo, edgeDbId, edgeDistanceKm, edgeTimeMin, edgeBaseStatus,
-                List.of(shelter), GRAPH_VERSION, LocalDateTime.now());
+                dbNodeId, nodeName, nodeLat, nodeLon, nodeType, nodeActive, nodeCapacityPersonsPerHour,
+                nodeIdToIndex, edgeHead, edgeTo, edgeDbId, edgeDistanceKm, edgeTimeMin,
+                edgeCapacityPersonsPerHour, edgeBaseStatus, List.of(shelter), GRAPH_VERSION,
+                LocalDateTime.now());
     }
 
     private TimeModel defaultTimeModel() {

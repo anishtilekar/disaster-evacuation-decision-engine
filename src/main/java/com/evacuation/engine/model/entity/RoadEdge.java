@@ -59,6 +59,11 @@ public class RoadEdge {
     @Column(name = "estimated_travel_time_minutes", nullable = false)
     private Double estimatedTravelTimeMinutes;
 
+    @NotNull(message = "Capacity is required")
+    @Positive(message = "Capacity must be greater than zero")
+    @Column(name = "capacity_persons_per_hour", nullable = false)
+    private Double capacityPersonsPerHour;
+
     @NotNull(message = "Road status is required")
     @Enumerated(EnumType.STRING)
     @Column(name = "road_status", nullable = false, length = 20)

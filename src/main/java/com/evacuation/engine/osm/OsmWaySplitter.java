@@ -23,6 +23,12 @@ import java.util.Set;
  * haversine length is accumulated into the resulting segment. This keeps the node count
  * "routing-sized" rather than "GPS-trace-sized", which is what the in-memory graph and the
  * shortest-path search actually need.
+ *
+ * <p>Each emitted segment also carries its way's raw {@code highway} classification and, when
+ * present, its {@code lanes} tag. Neither is used by anything in this class — they exist so a
+ * later {@code OsmCapacityTable} can derive persons-per-bucket capacity from the way's actual OSM
+ * category and lane count rather than assuming a category-wide default for every edge. Preserving
+ * the raw tag here, once, is cheaper than re-deriving it from the source data a second time.
  */
 @Component
 public class OsmWaySplitter {
@@ -38,9 +44,16 @@ public class OsmWaySplitter {
      * A single routable segment between two graph vertices. {@code lengthKm} is the summed
      * haversine length of the shape points it collapses; {@code bidirectional} is {@code false}
      * for one-way roads (the graph builder expands two-way segments into two directed edges).
+     * {@code highwayType} is the way's raw {@code highway} tag value (e.g. {@code "primary"},
+     * {@code "residential"}) — the same string {@link OsmSpeedTable} keys its lookup on, so no new
+     * parsing convention is introduced. {@code lanes} is the way's {@code lanes} tag parsed as an
+     * integer, or {@code null} when the tag is absent or unparseable — OSM frequently omits it on
+     * minor roads, and a capacity table must treat that as "unknown, apply a category default"
+     * rather than fail.
      */
     public record SplitSegment(long fromOsmId, long toOsmId, double lengthKm, String roadName,
-                               double speedKmh, boolean bidirectional) {
+                               double speedKmh, boolean bidirectional, String highwayType,
+                               Integer lanes) {
     }
 
     /** The vertices and segments produced from an Overpass response. */
@@ -145,7 +158,9 @@ public class OsmWaySplitter {
                             Set<Long> usedNodeIds) {
 
         String roadName = resolveRoadName(way);
-        double speedKmh = speeds.speedKmh(way.tag("highway"), way.tag("maxspeed"));
+        String highwayType = way.tag("highway");
+        double speedKmh = speeds.speedKmh(highwayType, way.tag("maxspeed"));
+        Integer lanes = parseLanes(way.tag("lanes"));
 
         boolean reverse = false;
         boolean oneWay;
@@ -179,7 +194,7 @@ public class OsmWaySplitter {
                 accumulatedKm = 0.0;
             } else if (vertexIds.contains(id)) {
                 emitSegment(segStart, id, accumulatedKm, roadName, speedKmh, bidirectional, reverse,
-                        segments, usedNodeIds);
+                        highwayType, lanes, segments, usedNodeIds);
                 segStart = id;
                 accumulatedKm = 0.0;
             }
@@ -193,13 +208,15 @@ public class OsmWaySplitter {
      */
     private void emitSegment(long segStart, long current, double lengthKm, String roadName,
                              double speedKmh, boolean bidirectional, boolean reverse,
+                             String highwayType, Integer lanes,
                              List<SplitSegment> segments, Set<Long> usedNodeIds) {
         long from = reverse ? current : segStart;
         long to = reverse ? segStart : current;
         if (from == to || lengthKm <= 0.0) {
             return;
         }
-        segments.add(new SplitSegment(from, to, lengthKm, roadName, speedKmh, bidirectional));
+        segments.add(new SplitSegment(from, to, lengthKm, roadName, speedKmh, bidirectional,
+                highwayType, lanes));
         usedNodeIds.add(from);
         usedNodeIds.add(to);
     }
@@ -212,5 +229,20 @@ public class OsmWaySplitter {
             roadName = roadName.substring(0, MAX_ROAD_NAME_LENGTH);
         }
         return roadName;
+    }
+
+    /**
+     * Parses the {@code lanes} tag into an integer, or {@code null} when absent, blank, or
+     * unparseable (OSM occasionally carries non-numeric or range values here, e.g. {@code "2;3"}).
+     */
+    private Integer parseLanes(String lanesTag) {
+        if (lanesTag == null || lanesTag.isBlank()) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(lanesTag.trim());
+        } catch (NumberFormatException ex) {
+            return null;
+        }
     }
 }

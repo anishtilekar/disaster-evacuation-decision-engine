@@ -37,6 +37,14 @@ public final class GraphSnapshot {
     private final NodeType[] nodeType;
     /** Base-graph {@code RoadNode.active}; the overlay derives block-state from this but does not own it. */
     private final boolean[] nodeActive;
+    /**
+     * Waiting/staging capacity, in persons/hour: the max {@code edgeCapacityPersonsPerHour} among the
+     * node's incident edges (OSM carries no tag for "how many people can occupy this junction", so
+     * this is derived from real adjacency rather than a flat guess — a junction's holding capacity is
+     * bounded by its largest connected approach, not the sum of all of them, which would overstate it).
+     * Computed by {@code GraphBuilder} once the CSR exists; never persisted on {@code RoadNode} itself.
+     */
+    private final double[] nodeCapacityPersonsPerHour;
     /** {@code dbNodeId -> dense index}, unmodifiable; exposed only via {@link #indexOfDbNodeId(long)}. */
     private final Map<Long, Integer> nodeIdToIndex;
 
@@ -51,6 +59,8 @@ public final class GraphSnapshot {
     private final double[] edgeDistanceKm;
     /** From {@code RoadEdge.estimatedTravelTimeMinutes}. */
     private final double[] edgeTimeMin;
+    /** From {@code RoadEdge.capacityPersonsPerHour}; the reservation ledger converts this to a per-bucket rate. */
+    private final double[] edgeCapacityPersonsPerHour;
     /** Base {@code RoadEdge.roadStatus}; the overlay layers live status on top of this. */
     private final RoadStatus[] edgeBaseStatus;
 
@@ -78,6 +88,8 @@ public final class GraphSnapshot {
      * Holds the pre-built, pre-validated graph arrays and collections by reference (no copies — the
      * builder is trusted to have made the map and list unmodifiable). {@code nodeCount} and
      * {@code edgeSlotCount} are derived from the array lengths so they cannot disagree with them.
+     * {@code edgeCapacityPersonsPerHour} is an hourly rate, not a per-bucket one, so it stays valid
+     * even if the bucket width changes — the reservation ledger converts it at the point of use.
      */
     public GraphSnapshot(long[] dbNodeId,
                          String[] nodeName,
@@ -85,12 +97,14 @@ public final class GraphSnapshot {
                          double[] nodeLon,
                          NodeType[] nodeType,
                          boolean[] nodeActive,
+                         double[] nodeCapacityPersonsPerHour,
                          Map<Long, Integer> nodeIdToIndex,
                          int[] edgeHead,
                          int[] edgeTo,
                          long[] edgeDbId,
                          double[] edgeDistanceKm,
                          double[] edgeTimeMin,
+                         double[] edgeCapacityPersonsPerHour,
                          RoadStatus[] edgeBaseStatus,
                          List<ShelterRef> shelters,
                          long graphVersion,
@@ -101,12 +115,14 @@ public final class GraphSnapshot {
         this.nodeLon = nodeLon;
         this.nodeType = nodeType;
         this.nodeActive = nodeActive;
+        this.nodeCapacityPersonsPerHour = nodeCapacityPersonsPerHour;
         this.nodeIdToIndex = nodeIdToIndex;
         this.edgeHead = edgeHead;
         this.edgeTo = edgeTo;
         this.edgeDbId = edgeDbId;
         this.edgeDistanceKm = edgeDistanceKm;
         this.edgeTimeMin = edgeTimeMin;
+        this.edgeCapacityPersonsPerHour = edgeCapacityPersonsPerHour;
         this.edgeBaseStatus = edgeBaseStatus;
         this.shelters = shelters;
         this.graphVersion = graphVersion;
@@ -153,6 +169,10 @@ public final class GraphSnapshot {
         return edgeTimeMin[slot];
     }
 
+    public double edgeCapacityPersonsPerHour(int slot) {
+        return edgeCapacityPersonsPerHour[slot];
+    }
+
     public RoadStatus edgeBaseStatus(int slot) {
         return edgeBaseStatus[slot];
     }
@@ -181,6 +201,10 @@ public final class GraphSnapshot {
 
     public boolean nodeActive(int nodeIndex) {
         return nodeActive[nodeIndex];
+    }
+
+    public double nodeCapacityPersonsPerHour(int nodeIndex) {
+        return nodeCapacityPersonsPerHour[nodeIndex];
     }
 
     /** Dense index for a database node id, or {@code null} if it is not in this snapshot. */

@@ -69,6 +69,7 @@ public class OsmImportService {
     private final OverpassClient overpassClient;
     private final OsmWaySplitter waySplitter;
     private final OsmSpeedTable speedTable;
+    private final OsmCapacityTable capacityTable;
     private final OsmShelterExtractor osmShelterExtractor;
     private final GraphEngineProperties props;
     private final RoadNodeRepository roadNodeRepository;
@@ -81,6 +82,7 @@ public class OsmImportService {
                             OverpassClient overpassClient,
                             OsmWaySplitter waySplitter,
                             OsmSpeedTable speedTable,
+                            OsmCapacityTable capacityTable,
                             OsmShelterExtractor osmShelterExtractor,
                             GraphEngineProperties props,
                             RoadNodeRepository roadNodeRepository,
@@ -92,6 +94,7 @@ public class OsmImportService {
         this.overpassClient = overpassClient;
         this.waySplitter = waySplitter;
         this.speedTable = speedTable;
+        this.capacityTable = capacityTable;
         this.osmShelterExtractor = osmShelterExtractor;
         this.props = props;
         this.roadNodeRepository = roadNodeRepository;
@@ -160,6 +163,8 @@ public class OsmImportService {
             double distanceKm = Math.max(segment.lengthKm(), MIN_DISTANCE_KM);
             double speedKmh = segment.speedKmh() > 0 ? segment.speedKmh() : props.getNetworkMaxSpeedKmh();
             double travelTimeMin = Math.max(distanceKm / speedKmh * 60.0, MIN_TRAVEL_TIME_MIN);
+            double capacityPersonsPerHour = capacityTable.capacityPersonsPerHour(
+                    segment.highwayType(), segment.lanes());
             String roadName = segment.roadName() != null
                     ? truncate(segment.roadName(), MAX_ROAD_NAME_LENGTH)
                     : DEFAULT_ROAD_NAME;
@@ -170,6 +175,7 @@ public class OsmImportService {
                     .destinationNode(to)
                     .distanceKm(distanceKm)
                     .estimatedTravelTimeMinutes(travelTimeMin)
+                    .capacityPersonsPerHour(capacityPersonsPerHour)
                     .roadStatus(RoadStatus.OPEN)
                     .bidirectional(segment.bidirectional())
                     .build());
