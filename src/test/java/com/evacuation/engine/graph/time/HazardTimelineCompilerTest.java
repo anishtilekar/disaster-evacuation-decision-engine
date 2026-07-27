@@ -8,6 +8,7 @@ import com.evacuation.engine.model.entity.RoadEdge;
 import com.evacuation.engine.model.enums.NodeType;
 import com.evacuation.engine.model.enums.RoadStatus;
 import com.evacuation.engine.repository.graph.BlockedRoadRepository;
+import com.evacuation.engine.repository.graph.HazardEventRepository;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -87,8 +88,12 @@ class HazardTimelineCompilerTest {
         BlockedRoadRepository blockedRoadRepository = mock(BlockedRoadRepository.class);
         when(blockedRoadRepository.findActiveWithEdge()).thenReturn(List.of(blockedRoad));
 
+        // No predicted hazards here: this case isolates the legacy block's compilation.
+        HazardEventRepository hazardEventRepository = mock(HazardEventRepository.class);
+        when(hazardEventRepository.findByActive(true)).thenReturn(List.of());
+
         HazardTimeline timeline =
-                new HazardTimelineCompiler(blockedRoadRepository, defaultTimeModel()).compile(snapshot);
+                new HazardTimelineCompiler(blockedRoadRepository, hazardEventRepository, defaultTimeModel()).compile(snapshot);
         TraversalPolicy policy = new TraversalPolicy(snapshot, timeline);
 
         int lastBucket = timeline.horizonBuckets() - 1;
@@ -120,8 +125,11 @@ class HazardTimelineCompilerTest {
         BlockedRoadRepository blockedRoadRepository = mock(BlockedRoadRepository.class);
         when(blockedRoadRepository.findActiveWithEdge()).thenReturn(List.of());
 
+        HazardEventRepository hazardEventRepository = mock(HazardEventRepository.class);
+        when(hazardEventRepository.findByActive(true)).thenReturn(List.of());
+
         HazardTimeline timeline =
-                new HazardTimelineCompiler(blockedRoadRepository, defaultTimeModel()).compile(snapshot);
+                new HazardTimelineCompiler(blockedRoadRepository, hazardEventRepository, defaultTimeModel()).compile(snapshot);
         TraversalPolicy policy = new TraversalPolicy(snapshot, timeline);
 
         int lastBucket = timeline.horizonBuckets() - 1;

@@ -52,6 +52,12 @@ public class GraphEngineProperties {
     private final Time time = new Time();
 
     /**
+     * Dispatch cost weights. Populated in place by JavaBean binding via its getter, so the field is
+     * intentionally {@code final}.
+     */
+    private final Dispatch dispatch = new Dispatch();
+
+    /**
      * OpenStreetMap import, ward, and shelter settings, bound from {@code graph.osm.*}.
      */
     @Getter
@@ -120,5 +126,53 @@ public class GraphEngineProperties {
          * many buckets after a platoon exits it.
          */
         private int hazardMarginBuckets = 8;
+    }
+
+    /**
+     * Dispatch cost weights for the space-time search, bound from {@code graph.dispatch.*}.
+     *
+     * <p>These are the terms that decide what the search is willing to trade for what: how dearly it
+     * prices sending people through a RISKY arc, and how dearly it prices holding them still. Only the
+     * levers the current phase's code actually reads live here. The design names several more —
+     * {@code mu}/{@code q} for the BPR congestion term, the convoy {@code epsilon}, the
+     * anti-starvation {@code gamma} — and those arrive with the capacity phase that consumes them,
+     * rather than sitting here as configuration an operator can turn with no effect.
+     *
+     * <p><strong>On the medical preference being a penalty rather than a bonus.</strong> The design's
+     * pseudocode writes it as a subtraction from the sink arc's cost. The space-time search does not
+     * relax into a priced sink state at all — it harvests sink entries in the order states settle, and
+     * stops once the queue's head can no longer beat the best entry found. That shortcut is sound only
+     * while a state's sink cost is never below its own settled distance, so nothing already ruled out
+     * could have come back cheaper. A subtraction breaks that outright by risking a negative cost; a
+     * multiplicative factor breaks it too, and in fact has no room to work here — a matching shelter's
+     * sink arc costs nothing, so a discount could only bite by pushing the arrival cost below zero.
+     * Charging the <em>mismatched</em> option instead keeps every sink arc non-negative and leaves the
+     * ordering the bonus intended untouched. The preference stays soft either way: a nearer ordinary
+     * shelter still wins if the penalty does not cover the difference.
+     */
+    @Getter
+    @Setter
+    public static class Dispatch {
+
+        /**
+         * Lambda — the price per unit of RISKY-arc person-time exposure, relative to base travel time.
+         * Above 1.0 the search will accept a measurably longer route to keep people out of a risk band.
+         */
+        private double exposureWeight = 2.0;
+
+        /**
+         * {@code w_wait} — the cost multiplier for waiting one bucket in place instead of moving.
+         * At 1.0 a minute spent waiting costs exactly what a minute spent travelling costs; lowering it
+         * makes the search more willing to hold a party for a hazard or a queue to clear.
+         */
+        private double waitCostWeight = 1.0;
+
+        /**
+         * The design's {@code medBonus}, re-expressed as a charge on the option it disfavours: seconds
+         * added to the shelter arc when a medical-preferred party arrives at a shelter <em>without</em>
+         * a medical facility. A matching shelter pays nothing. Must stay at or above zero; see the
+         * class note on why this is a penalty rather than a bonus.
+         */
+        private double medicalMismatchPenaltySeconds = 180.0;
     }
 }
