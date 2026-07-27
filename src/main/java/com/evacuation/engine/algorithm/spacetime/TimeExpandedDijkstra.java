@@ -1,6 +1,7 @@
 package com.evacuation.engine.algorithm.spacetime;
 
 import com.evacuation.engine.config.GraphEngineProperties;
+import com.evacuation.engine.dispatch.ReservationLedger;
 import com.evacuation.engine.graph.overlay.TraversalPolicy;
 import com.evacuation.engine.graph.structure.GraphSnapshot;
 import com.evacuation.engine.graph.time.HazardTimeline;
@@ -48,12 +49,16 @@ import java.util.function.Predicate;
  * nothing on one with. Every sink arc stays {@code >= 0}, the settle-order argument survives
  * untouched, and the relative ordering between the two shelters is exactly what the bonus intended.
  *
- * <p><strong>Phase 2 scope — capacity is deliberately ignored, not stubbed.</strong> The doc's full
- * cost model has four further ledger-dependent pieces: the BPR-shaped congestion term, the slack
- * penalty, the convoy-coherence epsilon, and the {@code nodeResidual} gate on the waiting arc. All
- * four need the ReservationLedger the capacity phase introduces, and none appears here in any form.
- * What is implemented: shelter sink arcs, wait arcs, movement arcs, the C3 hazard-feasibility check
- * including the beta margin, and exposure pricing of RISKY cells.
+ * <p><strong>Scope — the hard capacity gate is in; the soft cost-shaping terms are not, yet.</strong>
+ * This search now enforces the design's constraint C1 (arc capacity) and the waiting arc's
+ * {@code nodeResidual} gate: a movement or wait transition the {@link ReservationLedger} could not
+ * actually hold is never generated, exactly like a hazard-infeasible one. The doc's full cost model
+ * also names three further terms — BPR-shaped congestion pricing, a slack-margin penalty, and
+ * convoy-coherence preference — that are deliberately still absent. Those only change which
+ * feasible route is chosen, never whether one exists, so they are a follow-up refinement once a
+ * working dispatch loop has been verified against the hard gate added here. What is implemented:
+ * shelter sink arcs, wait arcs (now capacity-gated), movement arcs (now capacity-gated), the C3
+ * hazard-feasibility check including the beta margin, and exposure pricing of RISKY cells.
  */
 @Component
 @Slf4j
@@ -83,19 +88,28 @@ public class TimeExpandedDijkstra {
      * @param departureBucket  the bucket the party departs at, relative to the timeline's epoch
      * @param eligibility      the caller's shelter filter; only shelters it accepts can terminate the search
      * @param medicalPreferred whether this party pays the mismatch penalty at non-medical shelters
+     * @param ledger           the reservation ledger this platoon's move must fit against; consulted
+     *                         read-only — this search never reserves anything itself
+     * @param platoonSize      how many people this search is routing at once, checked against the
+     *                         ledger's residual capacity on every candidate arc and wait
      * @return the cheapest feasible walk and the shelter it reaches, or the infeasible result; never
      *         {@code null}
-     * @throws IllegalArgumentException if {@code departureBucket} is negative
+     * @throws IllegalArgumentException if {@code departureBucket} is negative or {@code platoonSize}
+     *                                  is not positive
      */
     public SearchResult searchSpaceTime(TraversalPolicy policy, int originNodeIndex,
                                         int departureBucket,
                                         Predicate<GraphSnapshot.ShelterRef> eligibility,
-                                        boolean medicalPreferred) {
+                                        boolean medicalPreferred, ReservationLedger ledger,
+                                        int platoonSize) {
 
         // Buckets are always relative to the timeline's epoch, so a negative departure is a caller
         // bug rather than a planning outcome — fail loudly here instead of obscurely downstream.
         if (departureBucket < 0) {
             throw new IllegalArgumentException("departureBucket must be >= 0, got " + departureBucket);
+        }
+        if (platoonSize <= 0) {
+            throw new IllegalArgumentException("platoonSize must be > 0, got " + platoonSize);
         }
 
         GraphSnapshot snapshot = policy.snapshot();
@@ -195,10 +209,11 @@ public class TimeExpandedDijkstra {
                 }
             }
 
-            // 2. Waiting arc — stay put one bucket while the node remains non-lethal. Waiting can be
-            //    strictly optimal: it is how a party lets a hazard front pass an arc ahead of it.
-            //    (The capacity phase additionally gates this on node residual capacity.)
-            if (b + 1 < horizon && !timeline.isNodeLethal(v, b + 1)) {
+            // 2. Waiting arc — stay put one bucket while the node remains non-lethal and has room to
+            //    hold this platoon that bucket. Waiting can be strictly optimal: it is how a party
+            //    lets a hazard front pass an arc ahead of it, or a queue at a junction clear.
+            if (b + 1 < horizon && !timeline.isNodeLethal(v, b + 1)
+                    && ledger.nodeFeasible(v, b + 1, platoonSize)) {
                 int toFlat = SpaceTimeState.flatIndex(v, b + 1, horizon);
                 double candidate = entryCost + waitArcCost;
                 if (candidate < dist[toFlat]) {
@@ -220,6 +235,9 @@ public class TimeExpandedDijkstra {
                 }
                 if (!hazardFeasible(policy, slot, u, b, tau, beta)) {
                     continue; // C3, including the beta margin
+                }
+                if (!ledger.edgeFeasible(slot, b, tau, platoonSize)) {
+                    continue; // C1
                 }
 
                 // Base cost is the traversal's real duration; exposure prices each occupied bucket's

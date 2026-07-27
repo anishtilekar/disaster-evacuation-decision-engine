@@ -1,6 +1,7 @@
 package com.evacuation.engine.algorithm.spacetime;
 
 import com.evacuation.engine.config.GraphEngineProperties;
+import com.evacuation.engine.dispatch.ReservationLedger;
 import com.evacuation.engine.graph.overlay.TraversalPolicy;
 import com.evacuation.engine.graph.structure.GraphSnapshot;
 import com.evacuation.engine.graph.time.HazardTimeline;
@@ -177,11 +178,18 @@ class TimeExpandedDijkstraTest {
         return compile(snapshot, List.of(), List.of());
     }
 
-    /** The one search call every test runs: depart the origin at bucket 0, no medical preference. */
+    /**
+     * The one search call every test runs: depart the origin at bucket 0, no medical preference,
+     * a single-person platoon against a fresh (empty) ledger sized to this test's own snapshot —
+     * capacity is a non-factor here, so an empty ledger is a true no-op rather than a stand-in.
+     */
     private SearchResult searchFromOrigin(TraversalPolicy policy,
                                           Predicate<GraphSnapshot.ShelterRef> eligibility) {
-        return new TimeExpandedDijkstra(defaultTimeModel(), new GraphEngineProperties())
-                .searchSpaceTime(policy, NODE_ORIGIN, 0, eligibility, false);
+        GraphEngineProperties properties = new GraphEngineProperties();
+        TimeModel timeModel = defaultTimeModel();
+        ReservationLedger ledger = new ReservationLedger(policy.snapshot(), timeModel, properties);
+        return new TimeExpandedDijkstra(timeModel, properties)
+                .searchSpaceTime(policy, NODE_ORIGIN, 0, eligibility, false, ledger, 1);
     }
 
     private boolean passesThrough(TimedWalk walk, int nodeIndex) {
