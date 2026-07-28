@@ -90,15 +90,41 @@ public class HazardTimelineCompiler {
     }
 
     /**
-     * Compiles the hazard timeline for a snapshot at the current instant.
+     * Compiles the hazard timeline for a snapshot, anchored to the current instant.
+     *
+     * <p>Fine for a one-shot compile, but wrong for anything spanning more than a single call: two
+     * compiles made minutes apart would each plant bucket 0 at a different real moment, silently
+     * misaligning any reservation made against the first against the second's bucket space. Callers
+     * that persist state across multiple compiles — an operational session that dispatches once and
+     * repairs later — must use {@link #compile(GraphSnapshot, LocalDateTime)} with one epoch fixed
+     * for the whole session instead.
      *
      * @param snapshot the immutable graph the timeline is sized to and compiled against
      * @return a fresh, immutable hazard timeline paired with {@code snapshot}'s graph version
      */
     public HazardTimeline compile(GraphSnapshot snapshot) {
-        // 1. One clock read for the whole compile: this instant is bucket 0 for every pass below,
-        //    and the same instant the timeline records as its build time.
-        LocalDateTime compiledAt = LocalDateTime.now();
+        return compile(snapshot, LocalDateTime.now());
+    }
+
+    /**
+     * Compiles the hazard timeline for a snapshot, anchored to a caller-supplied epoch rather than
+     * the instant of the call.
+     *
+     * <p>This is what keeps bucket 0 meaning the same real moment across an entire operational
+     * session: a dispatch pass and every repair compiled after it must all resolve "now" against the
+     * same fixed epoch the session started with, not whatever instant each individual compile
+     * happens to run at — otherwise reservations made against an earlier compile would silently land
+     * in the wrong buckets of a later one.
+     *
+     * @param snapshot the immutable graph the timeline is sized to and compiled against
+     * @param epoch    the instant bucket 0 represents for this compile
+     * @return a fresh, immutable hazard timeline paired with {@code snapshot}'s graph version
+     */
+    public HazardTimeline compile(GraphSnapshot snapshot, LocalDateTime epoch) {
+        // 1. This is bucket 0 for every pass below, and the same instant the timeline records as its
+        //    build time — supplied by the caller rather than read from the clock here, so every
+        //    compile in one session can share the same epoch.
+        LocalDateTime compiledAt = epoch;
 
         int horizon = timeModel.horizonBuckets();
         int edgeSlotCount = snapshot.edgeSlotCount();

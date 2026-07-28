@@ -32,6 +32,7 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -154,11 +155,15 @@ class DispatchServiceTest {
 
         HazardTimelineCache hazardTimelineCache = mock(HazardTimelineCache.class);
         when(hazardTimelineCache.isLoaded()).thenReturn(false);
-        when(hazardTimelineCache.reload(snapshot)).thenReturn(timeline);
+        // DispatchService anchors the very first compile of a session to whatever "now" that
+        // session's first plan(...) call used, so the epoch argument varies test to test.
+        when(hazardTimelineCache.reload(any(GraphSnapshot.class), any(LocalDateTime.class)))
+                .thenReturn(timeline);
 
         return new DispatchService(
                 graphCache,
                 hazardTimelineCache,
+                new ActivePlan(),
                 new TimeExpandedDijkstra(timeModel, properties),
                 new MultiTargetShelterSearch(),
                 timeModel,

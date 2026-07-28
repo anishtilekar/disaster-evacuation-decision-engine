@@ -50,18 +50,25 @@ import java.util.function.Predicate;
  * That is a proxy for the design's "count of feasible shelter options", not a literal count, and is
  * documented as such rather than overclaimed.
  *
- * <p><strong>Shelter capacity is charged at assignment, not on arrival.</strong> Each committed
- * platoon immediately decrements its shelter's remaining room, and the eligibility filter handed to
- * the search consults that live figure. This closes a real race in a per-request design, where two
- * concurrent requests can both see the same free space, both be sent, and only discover the
- * oversubscription when they arrive.
+ * <p><strong>Shelter capacity is charged at assignment, not on arrival.</strong> Remaining room per
+ * shelter is derived fresh each call from the snapshot's static capacity minus everyone the plan
+ * book already has committed there, rather than tracked as separate mutable state that could drift
+ * out of sync with the book. The eligibility filter handed to the search reads that live figure, so
+ * a shelter filled by an earlier platoon — in this call or a previous one — is already excluded.
+ * This closes a real race in a per-request design, where two concurrent requests can both see the
+ * same free space, both be sent, and only discover the oversubscription when they arrive.
  *
- * <p><strong>Scope.</strong> Each {@code plan(...)} call is a fresh planning pass over a fresh
- * ledger — the batch is planned from an empty board. Targeted repair of an existing plan after a
- * hazard event is a different entry point, arriving with the repair phase, and will reuse a
- * retained ledger rather than resetting one. Convoy coherence (keeping a party's waves on a shared
- * spatial route) is likewise deferred with the other soft cost terms; waves are separated here by
- * departure stagger alone.
+ * <p><strong>Calls accumulate onto one retained session, they do not replan from scratch.</strong>
+ * The ledger and plan book live in {@link ActivePlan} and persist across every {@code plan(...)}
+ * call — the first call starts the session, and every later call adds its parties to the same
+ * board rather than resetting it, which is what lets {@code RepairService} find and modify
+ * reservations a previous call made. That persistence is also why bucket 0 cannot be re-anchored to
+ * "now" on every call: it is fixed once, at the session's start, and every departure bucket after
+ * that is computed relative to that fixed epoch — see {@link #ensureSession} and
+ * {@link #departureBucketFor}.
+ *
+ * <p><strong>Scope.</strong> Convoy coherence (keeping a party's waves on a shared spatial route) is
+ * deferred with the other soft cost terms; waves are separated here by departure stagger alone.
  */
 @Service
 @Slf4j
@@ -70,6 +77,7 @@ public class DispatchService {
 
     private final GraphCache graphCache;
     private final HazardTimelineCache hazardTimelineCache;
+    private final ActivePlan activePlan;
     private final TimeExpandedDijkstra timeExpandedDijkstra;
     private final MultiTargetShelterSearch multiTargetShelterSearch;
     private final TimeModel timeModel;
@@ -79,27 +87,28 @@ public class DispatchService {
     private final AtomicLong platoonIdSequence = new AtomicLong();
 
     /**
-     * Plans every party in one pass and returns what was committed and what fell short.
+     * Plans every party in one pass against the current session's retained ledger and plan book,
+     * returning what this call committed and what fell short.
      *
-     * <p>Synchronized because a planning pass owns a mutable ledger and a mutable shelter tally for
-     * its duration; two overlapping passes would interleave reservations and produce a plan neither
-     * of them actually checked. The design's dispatch is sequential by construction, so serialising
+     * <p>Synchronized because a planning pass reads and mutates the session's shared ledger and
+     * plan book; two overlapping calls would interleave reservations and produce a plan neither of
+     * them actually checked. The design's dispatch is sequential by construction, so serialising
      * whole passes costs nothing it was relying on.
      *
      * @param parties the parties to route; planned in the order this method chooses, not the order given
-     * @param now     the wall-clock instant bucket 0 represents for this pass
-     * @return every committed platoon and every party that could not be fully placed
+     * @param now     the wall-clock instant this call is happening at — starts the session's epoch
+     *                if none is active yet, otherwise just marks how much of the fixed epoch has
+     *                elapsed; see {@link #ensureSession}
+     * @return every platoon this call committed and every party it could not fully place
      */
     public synchronized InstructionSet plan(List<Party> parties, LocalDateTime now) {
         GraphSnapshot snapshot = graphCache.get();
-        TraversalPolicy policy = new TraversalPolicy(snapshot, currentTimelineFor(snapshot));
+        LocalDateTime sessionEpoch = ensureSession(snapshot, now);
 
-        // A fresh board: nothing reserved, every shelter at its snapshot capacity.
-        ReservationLedger ledger = new ReservationLedger(snapshot, timeModel, properties);
-        Map<Long, Integer> shelterRemaining = new HashMap<>();
-        for (GraphSnapshot.ShelterRef shelter : snapshot.shelters()) {
-            shelterRemaining.put(shelter.shelterId(), shelter.availableCapacity());
-        }
+        TraversalPolicy policy = new TraversalPolicy(snapshot, currentTimelineFor(snapshot, sessionEpoch));
+        ReservationLedger ledger = activePlan.ledger();
+        PlanBook planBook = activePlan.planBook();
+        Map<Long, Integer> shelterRemaining = computeShelterRemaining(snapshot, planBook);
 
         List<Party> ordered = orderForDispatch(parties, snapshot, policy);
 
@@ -107,7 +116,8 @@ public class DispatchService {
         List<InstructionSet.Shortfall> shortfalls = new ArrayList<>();
 
         for (Party party : ordered) {
-            planParty(party, now, snapshot, policy, ledger, shelterRemaining, committed, shortfalls);
+            planParty(party, sessionEpoch, now, snapshot, policy, ledger, planBook,
+                    shelterRemaining, committed, shortfalls);
         }
 
         int placedPeople = committed.stream().mapToInt(DispatchResult::size).sum();
@@ -120,6 +130,38 @@ public class DispatchService {
     }
 
     /**
+     * Makes sure a session is active and returns its fixed epoch, starting one if necessary.
+     *
+     * <p>Three cases: no session has ever started (start one, epoch = {@code now}); a session is
+     * active but was built against a graph of a different shape (the ledger's array sizes can no
+     * longer match the current snapshot's slot/node counts — a rare, manual re-import, but one that
+     * would otherwise index out of bounds rather than fail cleanly, so it is treated as a forced
+     * fresh start rather than silently trusted); or a session is active and still matches (return
+     * its already-fixed epoch unchanged, whatever {@code now} is this call).
+     *
+     * <p>Starting a session also anchors the hazard timeline to that same epoch, so the very first
+     * compile of this session and every later repair-triggered recompile agree on what bucket 0 means.
+     */
+    private LocalDateTime ensureSession(GraphSnapshot snapshot, LocalDateTime now) {
+        if (activePlan.isActive()) {
+            ReservationLedger current = activePlan.ledger();
+            if (current.edgeSlotCount() == snapshot.edgeSlotCount()
+                    && current.nodeCount() == snapshot.nodeCount()) {
+                return activePlan.sessionEpoch();
+            }
+            log.warn("Active session's ledger no longer matches the current graph shape "
+                            + "(edge slots {} vs {}, nodes {} vs {}); starting a new session and "
+                            + "discarding its reservations",
+                    current.edgeSlotCount(), snapshot.edgeSlotCount(),
+                    current.nodeCount(), snapshot.nodeCount());
+        }
+
+        activePlan.reset(snapshot, timeModel, properties, now);
+        hazardTimelineCache.reload(snapshot, now);
+        return now;
+    }
+
+    /**
      * Routes one party's waves in order, stopping at the first that cannot be placed.
      *
      * <p>Stopping rather than skipping ahead is deliberate: waves depart in sequence, and if the
@@ -128,14 +170,14 @@ public class DispatchService {
      * together, so an operator sees one honest number per party rather than a scatter of partial
      * failures.
      */
-    private void planParty(Party party, LocalDateTime now, GraphSnapshot snapshot,
-                           TraversalPolicy policy, ReservationLedger ledger,
-                           Map<Long, Integer> shelterRemaining,
+    private void planParty(Party party, LocalDateTime sessionEpoch, LocalDateTime now,
+                           GraphSnapshot snapshot, TraversalPolicy policy, ReservationLedger ledger,
+                           PlanBook planBook, Map<Long, Integer> shelterRemaining,
                            List<DispatchResult> committed,
                            List<InstructionSet.Shortfall> shortfalls) {
 
         List<Platoon> platoons = splitIntoPlatoons(party);
-        int earliestDeparture = departureBucketFor(party, now);
+        int earliestDeparture = departureBucketFor(party, sessionEpoch, now);
         int stagger = properties.getDispatch().getConvoyStaggerBuckets();
 
         for (Platoon platoon : platoons) {
@@ -164,8 +206,10 @@ public class DispatchService {
             // Charge the shelter now, so the next platoon's eligibility filter already sees it.
             shelterRemaining.merge(result.shelter().shelterId(), -platoon.size(), Integer::sum);
 
-            committed.add(new DispatchResult(
-                    party.partyId(), platoon.platoonId(), platoon.waveIndex(), platoon.size(), result));
+            DispatchResult dispatchResult = new DispatchResult(
+                    party.partyId(), platoon.platoonId(), platoon.waveIndex(), platoon.size(), result);
+            committed.add(dispatchResult);
+            planBook.commit(dispatchResult);
         }
     }
 
@@ -247,22 +291,47 @@ public class DispatchService {
     }
 
     /**
-     * The bucket a party's first wave may leave at: now if its request has already come due, or the
-     * bucket its future-dated request falls in.
+     * The bucket a party's first wave may leave at, relative to the session's fixed epoch — never
+     * relative to {@code now} directly, since bucket 0 does not move once a session has started.
+     *
+     * <p>A party cannot depart before this call is actually happening (so {@code now} is always a
+     * floor), and a future-dated request cannot depart before it is made (so
+     * {@code party.requestedAt()} is the other floor). The later of the two, converted to a bucket
+     * offset from the session epoch, is the earliest honest departure.
      */
-    private int departureBucketFor(Party party, LocalDateTime now) {
-        long secondsUntilRequest = Duration.between(now, party.requestedAt()).toSeconds();
-        return secondsUntilRequest <= 0 ? 0 : timeModel.bucketsForSeconds(secondsUntilRequest);
+    private int departureBucketFor(Party party, LocalDateTime sessionEpoch, LocalDateTime now) {
+        LocalDateTime earliestPossibleDeparture =
+                now.isAfter(party.requestedAt()) ? now : party.requestedAt();
+        long secondsSinceEpoch = Duration.between(sessionEpoch, earliestPossibleDeparture).toSeconds();
+        return secondsSinceEpoch <= 0 ? 0 : timeModel.bucketsForSeconds(secondsSinceEpoch);
     }
 
     /**
      * Only open shelters with room for this whole platoon are targets — the live tally, not the
-     * snapshot's static figure, so a shelter filled earlier in this same pass is already excluded.
+     * snapshot's static figure, so a shelter filled earlier (this call or a previous one) is already
+     * excluded.
      */
     private Predicate<GraphSnapshot.ShelterRef> eligibilityFor(int platoonSize,
                                                                Map<Long, Integer> shelterRemaining) {
         return shelter -> shelter.status() == ShelterStatus.AVAILABLE
                 && shelterRemaining.getOrDefault(shelter.shelterId(), 0) >= platoonSize;
+    }
+
+    /**
+     * Derives each shelter's currently-remaining room from the snapshot's static capacity minus
+     * everyone the plan book already has committed there — computed fresh rather than tracked as its
+     * own mutable field, so it can never drift out of sync with what is actually committed across an
+     * accumulating session.
+     */
+    private Map<Long, Integer> computeShelterRemaining(GraphSnapshot snapshot, PlanBook planBook) {
+        Map<Long, Integer> remaining = new HashMap<>();
+        for (GraphSnapshot.ShelterRef shelter : snapshot.shelters()) {
+            remaining.put(shelter.shelterId(), shelter.availableCapacity());
+        }
+        for (DispatchResult result : planBook.all()) {
+            remaining.merge(result.searchResult().shelter().shelterId(), -result.size(), Integer::sum);
+        }
+        return remaining;
     }
 
     /**
@@ -308,11 +377,13 @@ public class DispatchService {
     }
 
     /**
-     * The hazard timeline for this snapshot, recompiled if the cache holds nothing or holds one
-     * built against a different graph version — {@link TraversalPolicy} refuses a mismatched pair
-     * outright, so reconciling here is what keeps a graph reload from breaking the next plan.
+     * The hazard timeline for this snapshot, recompiled against {@code sessionEpoch} if the cache
+     * holds nothing or holds one built against a different graph version — {@link TraversalPolicy}
+     * refuses a mismatched pair outright, so reconciling here is what keeps a graph reload from
+     * breaking the next plan. Any recompile this triggers uses the session's fixed epoch, never a
+     * fresh {@code now()}, so bucket 0 keeps meaning what it has meant for the whole session.
      */
-    private HazardTimeline currentTimelineFor(GraphSnapshot snapshot) {
+    private HazardTimeline currentTimelineFor(GraphSnapshot snapshot, LocalDateTime sessionEpoch) {
         if (hazardTimelineCache.isLoaded()) {
             HazardTimeline timeline = hazardTimelineCache.get();
             if (timeline.graphVersion() == snapshot.graphVersion()) {
@@ -322,6 +393,6 @@ public class DispatchService {
                             + "recompiling before dispatch",
                     timeline.graphVersion(), snapshot.graphVersion());
         }
-        return hazardTimelineCache.reload(snapshot);
+        return hazardTimelineCache.reload(snapshot, sessionEpoch);
     }
 }

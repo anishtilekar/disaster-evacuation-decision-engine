@@ -6,8 +6,10 @@ import com.evacuation.engine.graph.time.TimeModel;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * The design's space-time reservation table: who has already promised to be where, and when.
@@ -52,10 +54,14 @@ import java.util.Map;
  * constructed explicitly against a specific snapshot; the dispatch service owns the question of when
  * to build one and how long to keep it.
  *
- * <p><strong>Scope.</strong> {@code partiesIntersecting(...)} — finding which platoons a hazard
- * event invalidates — is not built here. Its only caller is the repair phase, and this class stays
- * limited to what the dispatch loop itself needs: check, reserve, release, and journal/rollback for
- * tentative moves.
+ * <p><strong>Repair support.</strong> Two methods exist for the repair phase and are only ever
+ * called by it. {@link #platoonsIntersecting(Set, Set, int)} answers "whom does this event
+ * invalidate" by finding the platoons holding still-future reservations on the affected cells, and
+ * {@link #release(long, int)} then gives back <em>only</em> the future portion of one such platoon's
+ * holdings. Together they express the design's {@code partiesIntersecting(cells, from = now)} →
+ * {@code release(i, futurePortionOnly)} pair: an event that happens now can change where a platoon
+ * is going, but it cannot rewrite where the platoon has already been, so the elapsed part of every
+ * plan stays exactly as recorded.
  */
 public final class ReservationLedger {
 
@@ -158,8 +164,10 @@ public final class ReservationLedger {
 
     /**
      * Whether {@code size} people could traverse {@code slot} across {@code [fromBucket, fromBucket +
-     * tau)} without exceeding its capacity in any bucket. Read-only — this is what a search calls
-     * while exploring candidates, long before anything is committed.
+     * tau)} without exceeding its capacity in any bucket.
+     *
+     * <p>Read-only — this is what a search calls while exploring candidates, long before anything is
+     * committed.
      *
      * @throws IllegalArgumentException if the window falls outside the compiled horizon
      */
@@ -258,6 +266,89 @@ public final class ReservationLedger {
     }
 
     /**
+     * The design's {@code ledger.release(i, futurePortionOnly)} — gives back only what has not
+     * happened yet, from {@code fromBucketInclusive} onward.
+     *
+     * <p>Where {@link #release(long)} erases a platoon's whole reservation as though it had never
+     * been planned, this keeps its already-elapsed history intact — both as occupancy and as
+     * holdings — and undoes only the part that lies at or beyond the bucket a repair is anchored to.
+     * That distinction is the point: a platoon that has spent the last four minutes crossing a
+     * bridge really did occupy those cells, and a flood reported now cannot change that. Erasing the
+     * past instead would free capacity that was genuinely consumed, letting some other platoon be
+     * routed through a bucket that has already gone by, and would destroy the audit trail of where
+     * this platoon actually went before it was rerouted.
+     *
+     * <p>An arc holding that straddles the cutoff is truncated rather than dropped: its occupancy is
+     * given back only for the buckets from the cutoff onward, and the holding is replaced by one
+     * covering just the retained past portion, so the two views stay exactly consistent. Junction
+     * holdings occupy a single cell each, so they are simply kept or dropped whole. A platoon that
+     * holds nothing is a safe no-op, matching {@link #release(long)}'s tolerance.
+     *
+     * @param platoonId           the platoon whose future reservations to give back
+     * @param fromBucketInclusive the first bucket considered "not yet happened"
+     * @throws IllegalArgumentException if {@code fromBucketInclusive} is negative
+     */
+    public synchronized void release(long platoonId, int fromBucketInclusive) {
+        if (fromBucketInclusive < 0) {
+            throw new IllegalArgumentException(
+                    "fromBucketInclusive must be >= 0, got " + fromBucketInclusive);
+        }
+
+        List<EdgeHolding> edgeHoldings = edgeHoldingsByPlatoon.get(platoonId);
+        if (edgeHoldings != null) {
+            List<EdgeHolding> retained = new ArrayList<>(edgeHoldings.size());
+            for (EdgeHolding holding : edgeHoldings) {
+                int windowEnd = holding.fromBucket() + holding.tau();
+
+                if (windowEnd <= fromBucketInclusive) {
+                    // Entirely in the past: untouched, occupancy and holding alike.
+                    retained.add(holding);
+                } else if (holding.fromBucket() >= fromBucketInclusive) {
+                    // Entirely in the future: give the whole window back and drop the holding.
+                    for (int bucket = holding.fromBucket(); bucket < windowEnd; bucket++) {
+                        edgeOccupancy[edgeCellIndex(holding.slot(), bucket)] -= holding.size();
+                    }
+                } else {
+                    // Straddles the cutoff: give back only the future buckets, keep the past as a
+                    // shorter holding so occupancy and holdings continue to describe the same thing.
+                    for (int bucket = fromBucketInclusive; bucket < windowEnd; bucket++) {
+                        edgeOccupancy[edgeCellIndex(holding.slot(), bucket)] -= holding.size();
+                    }
+                    retained.add(new EdgeHolding(
+                            holding.slot(),
+                            holding.fromBucket(),
+                            fromBucketInclusive - holding.fromBucket(),
+                            holding.size()));
+                }
+            }
+
+            if (retained.isEmpty()) {
+                edgeHoldingsByPlatoon.remove(platoonId);
+            } else {
+                edgeHoldingsByPlatoon.put(platoonId, retained);
+            }
+        }
+
+        List<NodeHolding> nodeHoldings = nodeHoldingsByPlatoon.get(platoonId);
+        if (nodeHoldings != null) {
+            List<NodeHolding> retained = new ArrayList<>(nodeHoldings.size());
+            for (NodeHolding holding : nodeHoldings) {
+                if (holding.bucket() < fromBucketInclusive) {
+                    retained.add(holding);
+                } else {
+                    nodeOccupancy[nodeCellIndex(holding.nodeIndex(), holding.bucket())] -= holding.size();
+                }
+            }
+
+            if (retained.isEmpty()) {
+                nodeHoldingsByPlatoon.remove(platoonId);
+            } else {
+                nodeHoldingsByPlatoon.put(platoonId, retained);
+            }
+        }
+    }
+
+    /**
      * An immutable record of what a platoon currently holds, for the improvement loop's
      * {@code journal → release → try something → rollback if worse} cycle. Mutates nothing; the
      * caller releases separately, keeping the two steps explicit rather than hiding a release inside
@@ -304,6 +395,78 @@ public final class ReservationLedger {
             }
             nodeHoldingsByPlatoon.put(platoonId, restored);
         }
+    }
+
+    // --- Repair support (what an event invalidates) ---
+
+    /**
+     * The design's {@code ledger.partiesIntersecting(e.cells, from = now)}: everyone whose remaining
+     * plan runs through the cells an event has just made unsafe or unusable.
+     *
+     * <p>Despite the design's name, this is genuinely <em>platoon</em>-grained, and deliberately so.
+     * Reservations are held per platoon, not per party, and a party split into several waves may
+     * well have only one of them actually crossing the affected cells — invalidating the whole party
+     * because one wave is caught would tear up plans that remain perfectly valid. The repair service
+     * is the piece that maps these platoon ids back to their owning parties, via the plan book, when
+     * it needs to reason at party level.
+     *
+     * <p>The {@code fromBucket} floor is what keeps history safe: only a holding that has not
+     * entirely passed counts as intersecting. An arc holding qualifies while its window has not yet
+     * ended ({@code fromBucket < holding.fromBucket() + tau}), so a platoon still partway across an
+     * affected arc is caught; a junction holding qualifies from its own bucket onward. A hazard
+     * reported now can invalidate a platoon's future, never the part of its route it has already
+     * completed.
+     *
+     * <p>Implemented as a linear scan of the current holdings rather than a reverse cell-to-platoon
+     * index. At this project's ward scale the committed holdings are few enough that the scan is far
+     * cheaper than keeping a second index correct through every reserve, release, partial release
+     * and rollback — the same by-scale reasoning this class applies elsewhere, and the same thing
+     * that would be worth revisiting for a city-wide graph.
+     *
+     * @param affectedEdgeSlots   CSR slots the event has compromised; may be empty
+     * @param affectedNodeIndices dense node indices the event has compromised; may be empty
+     * @param fromBucket          the first bucket that still counts as "not yet happened"
+     * @return the ids of every platoon holding a still-future reservation on an affected cell; empty
+     *         if there are none, never {@code null}
+     * @throws IllegalArgumentException if {@code fromBucket} is negative
+     */
+    public synchronized Set<Long> platoonsIntersecting(Set<Integer> affectedEdgeSlots,
+                                                       Set<Integer> affectedNodeIndices,
+                                                       int fromBucket) {
+        if (fromBucket < 0) {
+            throw new IllegalArgumentException("fromBucket must be >= 0, got " + fromBucket);
+        }
+        if (affectedEdgeSlots.isEmpty() && affectedNodeIndices.isEmpty()) {
+            return new HashSet<>();
+        }
+
+        Set<Long> affected = new HashSet<>();
+
+        if (!affectedEdgeSlots.isEmpty()) {
+            for (Map.Entry<Long, List<EdgeHolding>> entry : edgeHoldingsByPlatoon.entrySet()) {
+                for (EdgeHolding holding : entry.getValue()) {
+                    if (affectedEdgeSlots.contains(holding.slot())
+                            && fromBucket < holding.fromBucket() + holding.tau()) {
+                        affected.add(entry.getKey());
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!affectedNodeIndices.isEmpty()) {
+            for (Map.Entry<Long, List<NodeHolding>> entry : nodeHoldingsByPlatoon.entrySet()) {
+                for (NodeHolding holding : entry.getValue()) {
+                    if (affectedNodeIndices.contains(holding.nodeIndex())
+                            && holding.bucket() >= fromBucket) {
+                        affected.add(entry.getKey());
+                        break;
+                    }
+                }
+            }
+        }
+
+        return affected;
     }
 
     // --- Read accessors (invariant checking, diagnostics) ---

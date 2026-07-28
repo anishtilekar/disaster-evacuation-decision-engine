@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -45,16 +46,38 @@ public class HazardTimelineCache {
     }
 
     /**
-     * Recompiles the hazard timeline for the given snapshot and atomically publishes it as current.
+     * Recompiles the hazard timeline for the given snapshot, anchored to the current instant, and
+     * atomically publishes it as current.
+     *
+     * <p>Fine for a standalone reload, but wrong for a caller that persists state (reservations)
+     * across more than one compile — see {@link #reload(GraphSnapshot, LocalDateTime)} and
+     * {@link HazardTimelineCompiler#compile(GraphSnapshot, LocalDateTime)} for why.
      *
      * @param snapshot the immutable graph to compile the timeline against
      * @return the newly compiled timeline
      */
     public HazardTimeline reload(GraphSnapshot snapshot) {
-        HazardTimeline timeline = hazardTimelineCompiler.compile(snapshot);
+        return reload(snapshot, LocalDateTime.now());
+    }
+
+    /**
+     * Recompiles the hazard timeline for the given snapshot, anchored to a caller-supplied epoch, and
+     * atomically publishes it as current.
+     *
+     * <p>An operational session that dispatches once and repairs later must pass the same fixed
+     * epoch to every compile across that whole session, so bucket 0 keeps meaning the same real
+     * moment throughout and a reservation made against an earlier compile stays valid against a
+     * later one.
+     *
+     * @param snapshot the immutable graph to compile the timeline against
+     * @param epoch    the instant bucket 0 represents for this compile
+     * @return the newly compiled timeline
+     */
+    public HazardTimeline reload(GraphSnapshot snapshot, LocalDateTime epoch) {
+        HazardTimeline timeline = hazardTimelineCompiler.compile(snapshot, epoch);
         current.set(timeline);
-        log.info("Hazard timeline reloaded: version={}, graph v{}, horizon {} buckets",
-                timeline.timelineVersion(), timeline.graphVersion(), timeline.horizonBuckets());
+        log.info("Hazard timeline reloaded: version={}, graph v{}, horizon {} buckets, epoch {}",
+                timeline.timelineVersion(), timeline.graphVersion(), timeline.horizonBuckets(), epoch);
         return timeline;
     }
 
