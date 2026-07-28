@@ -183,5 +183,20 @@ public class GraphEngineProperties {
          * this project has no data to support. Must be in {@code (0, 1]}.
          */
         private double capacityHeadroom = 0.85;
+
+        /**
+         * The largest number of people routed as a single unit. A party bigger than this is split
+         * into successive waves, which is what makes a large group a flow over time rather than a
+         * fiction that hundreds of people traverse a road simultaneously. Must be positive.
+         */
+        private int maxPlatoonSize = 30;
+
+        /**
+         * Buckets of separation between one party's successive waves. Zero would send every wave at
+         * once and leave the capacity constraint to sort them out; a small positive stagger spaces
+         * them deliberately, which both reflects how a large group actually leaves and gives the
+         * search a reason to keep later waves off the arcs the earlier ones are still occupying.
+         */
+        private int convoyStaggerBuckets = 2;
     }
 }
