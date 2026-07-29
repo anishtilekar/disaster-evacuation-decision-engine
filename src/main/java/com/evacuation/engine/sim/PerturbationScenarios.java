@@ -256,6 +256,18 @@ public final class PerturbationScenarios {
      * exactly — the journal taken before the release makes abandoning the hypothetical total, leaving
      * the ledger byte-for-byte as it was rather than in a stranded or partly-stretched state.
      *
+     * <p><strong>Displacement is a genuine best effort, not a guarantee — and that is an honest
+     * limit, not a bug.</strong> Repair relocates the displaced platoon(s) <em>before</em> this
+     * platoon's stretched walk is ever reserved, so their search cannot see the pending need it is
+     * about to create. If the displaced platoon's own cheapest option is exactly the cell this
+     * platoon is about to want, repair will — correctly, given what it can see — send it right back
+     * there, and this platoon's own reservation attempt will conflict a second time. That case ends
+     * in {@link #applySlowPlatoon} returning {@code slowdownAbsorbed = false} with the ledger fully
+     * rolled back, never in a forced reservation or a corrupted state. Giving repair foresight of a
+     * not-yet-reserved need would require either a capacity-violating "hold" primitive this project
+     * deliberately does not have, or a way to exclude specific cells from one repair call, which does
+     * not exist either. Both remain open extensions if reconvergence turns out to matter in practice.
+     *
      * <p><strong>Horizon overrun is checked before any feasibility call, not after.</strong>
      * {@code edgeFeasible}/{@code nodeFeasible} throw on an out-of-horizon bucket rather than
      * returning {@code false} — reasonably, since every other caller only ever asks about buckets a
