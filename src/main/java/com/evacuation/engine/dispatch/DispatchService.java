@@ -398,7 +398,7 @@ public class DispatchService {
      * defensive path. Rolling back from the walk's own origin is correct in both callers without
      * either one needing to say so.
      */
-    static boolean reserveWalk(TimedWalk walk, long partyId, long platoonId, int size,
+    public static boolean reserveWalk(TimedWalk walk, long partyId, long platoonId, int size,
                                ReservationLedger ledger) {
         for (TimedWalk.Step step : walk.steps()) {
             boolean reserved;
