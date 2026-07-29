@@ -90,10 +90,15 @@ public class DispatchService {
      * Plans every party in one pass against the current session's retained ledger and plan book,
      * returning what this call committed and what fell short.
      *
-     * <p>Synchronized because a planning pass reads and mutates the session's shared ledger and
-     * plan book; two overlapping calls would interleave reservations and produce a plan neither of
-     * them actually checked. The design's dispatch is sequential by construction, so serialising
-     * whole passes costs nothing it was relying on.
+     * <p><strong>Synchronized on {@code activePlan}, not on this service.</strong> A planning pass
+     * reads and mutates the session's shared ledger and plan book, and so does a repair pass in
+     * {@code RepairService} — two different classes reading and mutating the exact same
+     * {@link ActivePlan}. Locking on {@code this} would only ever serialise calls against <em>this
+     * one instance</em>; it does nothing to stop a dispatch pass and a repair pass, running on two
+     * different threads through two different service beans, from interleaving against that shared
+     * state at the same time. The lock has to be the thing actually being shared, so both this method
+     * and {@code RepairService.onEvent(...)} synchronize on the same {@code activePlan} instance —
+     * the one object both classes were handed by Spring as the same singleton.
      *
      * @param parties the parties to route; planned in the order this method chooses, not the order given
      * @param now     the wall-clock instant this call is happening at — starts the session's epoch
@@ -101,32 +106,34 @@ public class DispatchService {
      *                elapsed; see {@link #ensureSession}
      * @return every platoon this call committed and every party it could not fully place
      */
-    public synchronized InstructionSet plan(List<Party> parties, LocalDateTime now) {
-        GraphSnapshot snapshot = graphCache.get();
-        LocalDateTime sessionEpoch = ensureSession(snapshot, now);
+    public InstructionSet plan(List<Party> parties, LocalDateTime now) {
+        synchronized (activePlan) {
+            GraphSnapshot snapshot = graphCache.get();
+            LocalDateTime sessionEpoch = ensureSession(snapshot, now);
 
-        TraversalPolicy policy = new TraversalPolicy(snapshot, currentTimelineFor(snapshot, sessionEpoch));
-        ReservationLedger ledger = activePlan.ledger();
-        PlanBook planBook = activePlan.planBook();
-        Map<Long, Integer> shelterRemaining = computeShelterRemaining(snapshot, planBook);
+            TraversalPolicy policy = new TraversalPolicy(snapshot, currentTimelineFor(snapshot, sessionEpoch));
+            ReservationLedger ledger = activePlan.ledger();
+            PlanBook planBook = activePlan.planBook();
+            Map<Long, Integer> shelterRemaining = computeShelterRemaining(snapshot, planBook);
 
-        List<Party> ordered = orderForDispatch(parties, snapshot, policy);
+            List<Party> ordered = orderForDispatch(parties, snapshot, policy);
 
-        List<DispatchResult> committed = new ArrayList<>();
-        List<InstructionSet.Shortfall> shortfalls = new ArrayList<>();
+            List<DispatchResult> committed = new ArrayList<>();
+            List<InstructionSet.Shortfall> shortfalls = new ArrayList<>();
 
-        for (Party party : ordered) {
-            planParty(party, sessionEpoch, now, snapshot, policy, ledger, planBook,
-                    shelterRemaining, committed, shortfalls);
+            for (Party party : ordered) {
+                planParty(party, sessionEpoch, now, snapshot, policy, ledger, planBook,
+                        shelterRemaining, committed, shortfalls);
+            }
+
+            int placedPeople = committed.stream().mapToInt(DispatchResult::size).sum();
+            int unplacedPeople = shortfalls.stream()
+                    .mapToInt(InstructionSet.Shortfall::unroutedSize).sum();
+            log.info("Dispatched {} parties: {} platoons committed ({} people), {} parties short ({} people)",
+                    parties.size(), committed.size(), placedPeople, shortfalls.size(), unplacedPeople);
+
+            return new InstructionSet(List.copyOf(committed), List.copyOf(shortfalls));
         }
-
-        int placedPeople = committed.stream().mapToInt(DispatchResult::size).sum();
-        int unplacedPeople = shortfalls.stream()
-                .mapToInt(InstructionSet.Shortfall::unroutedSize).sum();
-        log.info("Dispatched {} parties: {} platoons committed ({} people), {} parties short ({} people)",
-                parties.size(), committed.size(), placedPeople, shortfalls.size(), unplacedPeople);
-
-        return new InstructionSet(List.copyOf(committed), List.copyOf(shortfalls));
     }
 
     /**
@@ -192,7 +199,8 @@ public class DispatchService {
                     ledger,
                     platoon.size());
 
-            if (!result.feasible() || !reserveWalk(result.walk(), platoon, ledger)) {
+            if (!result.feasible() || !reserveWalk(result.walk(), party.partyId(), platoon.platoonId(),
+                    platoon.size(), ledger)) {
                 shortfalls.add(new InstructionSet.Shortfall(
                         party.partyId(),
                         unroutedFrom(platoons, platoon.waveIndex()),
@@ -207,7 +215,8 @@ public class DispatchService {
             shelterRemaining.merge(result.shelter().shelterId(), -platoon.size(), Integer::sum);
 
             DispatchResult dispatchResult = new DispatchResult(
-                    party.partyId(), platoon.platoonId(), platoon.waveIndex(), platoon.size(), result);
+                    party.partyId(), platoon.platoonId(), platoon.waveIndex(), platoon.size(),
+                    party.priority(), platoon.medicalPreferred(), result);
             committed.add(dispatchResult);
             planBook.commit(dispatchResult);
         }
@@ -341,24 +350,42 @@ public class DispatchService {
      * should not happen. It is still handled rather than assumed away: a partially reserved platoon
      * would corrupt every subsequent party's view of the board, so anything less than complete
      * success releases the whole platoon and reports it as unplaceable.
+     *
+     * <p>Package-private and {@code static} rather than an instance method of one caller: both this
+     * class's own dispatch loop and {@code RepairService}'s replan-and-recommit step need to commit a
+     * walk the exact same way, and a second copy of this all-or-nothing loop would be a real place for
+     * a future fix to land in only one of the two. Takes the three raw identity fields a caller
+     * already has on hand — {@code partyId}, {@code platoonId}, {@code size} — rather than a
+     * {@link Platoon}, since a repair anchored on an already-committed {@link DispatchResult} has
+     * those directly and no reason to reconstruct a {@code Platoon} just to call this.
+     *
+     * <p>On failure, the cleanup releases only from {@code walk.origin().bucket()} onward — never the
+     * whole platoon unconditionally. For this class's own fresh-dispatch caller that is equivalent to
+     * a full release, since a platoon being reserved for the first time has no holdings before its own
+     * departure bucket to begin with. But {@code RepairService} calls this after already giving back
+     * only a platoon's <em>future</em> holdings, deliberately preserving its already-elapsed
+     * reservation history — a full release here would silently erase that genuine history on this
+     * defensive path. Rolling back from the walk's own origin is correct in both callers without
+     * either one needing to say so.
      */
-    private boolean reserveWalk(TimedWalk walk, Platoon platoon, ReservationLedger ledger) {
+    static boolean reserveWalk(TimedWalk walk, long partyId, long platoonId, int size,
+                               ReservationLedger ledger) {
         for (TimedWalk.Step step : walk.steps()) {
             boolean reserved;
             if (step.isWait()) {
                 reserved = ledger.tryReserveNode(
-                        step.to().nodeIndex(), step.to().bucket(), platoon.size(), platoon.platoonId());
+                        step.to().nodeIndex(), step.to().bucket(), size, platoonId);
             } else {
                 int tau = step.to().bucket() - step.from().bucket();
                 reserved = ledger.tryReserveEdge(
-                        step.edgeSlot(), step.from().bucket(), tau, platoon.size(), platoon.platoonId());
+                        step.edgeSlot(), step.from().bucket(), tau, size, platoonId);
             }
 
             if (!reserved) {
                 log.warn("Platoon {} (party {}) failed to reserve a cell the search had accepted; "
-                                + "releasing the whole platoon",
-                        platoon.platoonId(), platoon.partyId());
-                ledger.release(platoon.platoonId());
+                                + "releasing from its walk's origin bucket {} onward",
+                        platoonId, partyId, walk.origin().bucket());
+                ledger.release(platoonId, walk.origin().bucket());
                 return false;
             }
         }
