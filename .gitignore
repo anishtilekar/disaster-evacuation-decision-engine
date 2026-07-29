@@ -24,3 +24,7 @@ hs_err_pid*
 replay_pid*
 
 target/
+
+# Python (tools/oracle/)
+__pycache__/
+*.pyc
