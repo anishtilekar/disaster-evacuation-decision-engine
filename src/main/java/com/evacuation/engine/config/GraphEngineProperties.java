@@ -198,5 +198,14 @@ public class GraphEngineProperties {
          * search a reason to keep later waves off the arcs the earlier ones are still occupying.
          */
         private int convoyStaggerBuckets = 2;
+
+        /**
+         * Minutes of waiting worth one full {@code EvacuationPriority} level of dispatch-order
+         * elevation. A party's effective ordering priority is its nominal level plus
+         * {@code minutesWaited / this}, so a LOW party that has waited long enough eventually
+         * outranks a CRITICAL party that just arrived, rather than being perpetually passed over
+         * because capacity keeps going to whoever is nominally more urgent. Must be positive.
+         */
+        private double starvationElevationMinutesPerLevel = 30.0;
     }
 }

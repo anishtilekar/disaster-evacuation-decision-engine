@@ -116,7 +116,7 @@ public class DispatchService {
             PlanBook planBook = activePlan.planBook();
             Map<Long, Integer> shelterRemaining = computeShelterRemaining(snapshot, planBook);
 
-            List<Party> ordered = orderForDispatch(parties, snapshot, policy);
+            List<Party> ordered = orderForDispatch(parties, snapshot, policy, now);
 
             List<DispatchResult> committed = new ArrayList<>();
             List<InstructionSet.Shortfall> shortfalls = new ArrayList<>();
@@ -223,27 +223,57 @@ public class DispatchService {
     }
 
     /**
-     * Sorts by priority class, then most-constrained-first within a class, then request time.
+     * Sorts by effective priority, then most-constrained-first, then request time.
      *
-     * <p>The constrainedness probe runs once per party and is cached into the sort key rather than
-     * recomputed per comparison — a comparator that runs a graph search on every call would turn an
-     * n-log-n sort into something far worse.
+     * <p><strong>Effective priority carries the anti-starvation elevation rule.</strong> The raw
+     * priority ordinal is a step function, and a queue ordered by it alone lets a nominally-low party
+     * be passed over indefinitely: every fresh batch can contain someone nominally more urgent, and
+     * "nominally more urgent" wins every time regardless of how long the loser has already been
+     * waiting. Elevation makes the first sort key continuous — an ordinal plus one class per
+     * {@code starvationElevationMinutesPerLevel} minutes waited — so waiting is itself a claim on
+     * capacity. A LOW party that has waited long enough must eventually outrank a CRITICAL party that
+     * arrived a moment ago, which is the whole point: nobody is perpetually deferred purely because
+     * someone else is always nominally more urgent at the instant dispatch runs.
+     *
+     * <p>Both the constrainedness probe and the elevation score are computed once per party and cached
+     * into the sort key rather than recomputed per comparison. For constrainedness that is a cost
+     * argument — a comparator running a graph search on every call would turn an n-log-n sort into
+     * something far worse. For elevation it is also a correctness one: the score is a function of
+     * elapsed time, and recomputing it inside the comparator would evaluate a moving quantity at
+     * slightly different instants across comparisons, giving the sort an ordering that is not
+     * internally consistent.
      */
     private List<Party> orderForDispatch(List<Party> parties, GraphSnapshot snapshot,
-                                         TraversalPolicy policy) {
+                                         TraversalPolicy policy, LocalDateTime now) {
         Map<Long, Double> constrainedness = new HashMap<>();
+        Map<Long, Double> effectivePriority = new HashMap<>();
         for (Party party : parties) {
             constrainedness.put(party.partyId(), estimateConstrainedness(party, snapshot, policy));
+            effectivePriority.put(party.partyId(), effectivePriority(party, now));
         }
 
         List<Party> ordered = new ArrayList<>(parties);
         ordered.sort(Comparator
-                .comparingInt((Party party) -> party.priority().ordinal()).reversed()
+                .comparingDouble((Party party) -> effectivePriority.get(party.partyId())).reversed()
                 .thenComparing(Comparator.comparingDouble(
                         (Party party) -> constrainedness.get(party.partyId())).reversed())
                 .thenComparing(Party::requestedAt)
                 .thenComparingLong(Party::partyId));
         return ordered;
+    }
+
+    /**
+     * A party's priority ordinal plus one class per configured minutes of waiting.
+     *
+     * <p>Waiting time is floored at zero: a future-dated request has not come due yet, so it has not
+     * been waiting at all, let alone long enough to have earned elevation. Without the floor its
+     * negative wait would <em>demote</em> it below its own nominal class.
+     */
+    private double effectivePriority(Party party, LocalDateTime now) {
+        double minutesWaited = Math.max(0.0,
+                Duration.between(party.requestedAt(), now).toSeconds() / 60.0);
+        return party.priority().ordinal()
+                + minutesWaited / properties.getDispatch().getStarvationElevationMinutesPerLevel();
     }
 
     /**
@@ -407,8 +437,10 @@ public class DispatchService {
      * The hazard timeline for this snapshot, recompiled against {@code sessionEpoch} if the cache
      * holds nothing or holds one built against a different graph version — {@link TraversalPolicy}
      * refuses a mismatched pair outright, so reconciling here is what keeps a graph reload from
-     * breaking the next plan. Any recompile this triggers uses the session's fixed epoch, never a
-     * fresh {@code now()}, so bucket 0 keeps meaning what it has meant for the whole session.
+     * breaking the next plan.
+     *
+     * <p>Any recompile this triggers uses the session's fixed epoch, never a fresh {@code now()}, so
+     * bucket 0 keeps meaning what it has meant for the whole session.
      */
     private HazardTimeline currentTimelineFor(GraphSnapshot snapshot, LocalDateTime sessionEpoch) {
         if (hazardTimelineCache.isLoaded()) {

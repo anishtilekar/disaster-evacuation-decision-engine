@@ -336,4 +336,64 @@ class DispatchServiceTest {
         assertTrue(short_ > 0, "with room for only " + limitedCapacity
                 + ", some of the crowd must be reported as unplaced");
     }
+
+    /**
+     * Anti-starvation elevation: a shelter with room for exactly one of two equal-size parties makes
+     * dispatch order directly observable — whoever goes first claims the only shelter, the other is
+     * the shortfall. This isolates the ordering rule itself from everything else the engine does.
+     */
+    private static final long CRITICAL_PARTY_ID = 101L;
+    private static final long LOW_PARTY_ID = 102L;
+    private static final int CONTESTED_PARTY_SIZE = 20;
+
+    @Test
+    @DisplayName("With no wait-time difference, critical priority dispatches before low priority")
+    void criticalPriorityWinsWhenNeitherHasWaited() {
+        GraphSnapshot snapshot = buildRiverCrossingSnapshot(CONTESTED_PARTY_SIZE);
+        // Default maxPlatoonSize (30) — each 20-person party must stay one platoon, or a shared
+        // shelter's capacity could be split across a winning party's own waves instead of only
+        // ever going to one party or the other, which is what this test needs to observe cleanly.
+        DispatchService dispatchService = buildDispatchService(snapshot, new GraphEngineProperties());
+        LocalDateTime now = LocalDateTime.now();
+
+        InstructionSet instructions = dispatchService.plan(List.of(
+                new Party(CRITICAL_PARTY_ID, NODE_ORIGIN, CONTESTED_PARTY_SIZE,
+                        EvacuationPriority.CRITICAL, false, now),
+                new Party(LOW_PARTY_ID, NODE_ORIGIN, CONTESTED_PARTY_SIZE,
+                        EvacuationPriority.LOW, false, now)),
+                now);
+
+        assertEquals(1, instructions.committed().size());
+        assertEquals(CRITICAL_PARTY_ID, instructions.committed().get(0).partyId());
+        assertEquals(1, instructions.shortfalls().size());
+        assertEquals(LOW_PARTY_ID, instructions.shortfalls().get(0).partyId());
+    }
+
+    @Test
+    @DisplayName("A low-priority party that has waited long enough outranks a critical party that just arrived")
+    void starvedLowPriorityPartyOutranksAFreshCriticalOne() {
+        GraphSnapshot snapshot = buildRiverCrossingSnapshot(CONTESTED_PARTY_SIZE);
+        // Default maxPlatoonSize (30) — each 20-person party must stay one platoon, or a shared
+        // shelter's capacity could be split across a winning party's own waves instead of only
+        // ever going to one party or the other, which is what this test needs to observe cleanly.
+        DispatchService dispatchService = buildDispatchService(snapshot, new GraphEngineProperties());
+        LocalDateTime now = LocalDateTime.now();
+
+        // Default starvationElevationMinutesPerLevel is 30; 300 minutes waited is +10.0 effective
+        // levels, comfortably past CRITICAL's un-elevated ordinal of 3.
+        LocalDateTime longAgo = now.minusMinutes(300);
+
+        InstructionSet instructions = dispatchService.plan(List.of(
+                new Party(CRITICAL_PARTY_ID, NODE_ORIGIN, CONTESTED_PARTY_SIZE,
+                        EvacuationPriority.CRITICAL, false, now),
+                new Party(LOW_PARTY_ID, NODE_ORIGIN, CONTESTED_PARTY_SIZE,
+                        EvacuationPriority.LOW, false, longAgo)),
+                now);
+
+        assertEquals(1, instructions.committed().size());
+        assertEquals(LOW_PARTY_ID, instructions.committed().get(0).partyId(),
+                "the long-waiting low-priority party should now claim the shelter first");
+        assertEquals(1, instructions.shortfalls().size());
+        assertEquals(CRITICAL_PARTY_ID, instructions.shortfalls().get(0).partyId());
+    }
 }
