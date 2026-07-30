@@ -115,33 +115,12 @@ public final class PerturbationScenarios {
             long secondsSinceEpoch = Duration.between(sessionEpoch, now).toSeconds();
             int nowBucket = secondsSinceEpoch <= 0 ? 0 : timeModel.bucketsForSeconds(secondsSinceEpoch);
 
-            int horizon = newTimeline.horizonBuckets();
-            Set<Integer> affectedEdgeSlots = new HashSet<>();
-            Set<Integer> affectedNodeIndices = new HashSet<>();
-
-            // Past buckets are settled history the repair cannot act on, so the scan starts at nowBucket.
-            for (int slot = 0; slot < snapshot.edgeSlotCount(); slot++) {
-                for (int bucket = nowBucket; bucket < horizon; bucket++) {
-                    if (newTimeline.isEdgeLethal(slot, bucket)
-                            && !oldTimeline.isEdgeLethal(slot, bucket)) {
-                        affectedEdgeSlots.add(slot);
-                        break;
-                    }
-                }
-            }
-            for (int nodeIndex = 0; nodeIndex < snapshot.nodeCount(); nodeIndex++) {
-                for (int bucket = nowBucket; bucket < horizon; bucket++) {
-                    if (newTimeline.isNodeLethal(nodeIndex, bucket)
-                            && !oldTimeline.isNodeLethal(nodeIndex, bucket)) {
-                        affectedNodeIndices.add(nodeIndex);
-                        break;
-                    }
-                }
-            }
+            HazardTimeline.NewlyLethalCells newlyLethal =
+                    HazardTimeline.newlyLethal(oldTimeline, newTimeline, nowBucket);
 
             long start = System.nanoTime();
-            InstructionSet repairResult =
-                    repairService.onEvent(affectedEdgeSlots, affectedNodeIndices, now);
+            InstructionSet repairResult = repairService.onEvent(
+                    newlyLethal.edgeSlots(), newlyLethal.nodeIndices(), now);
             long latencyNanos = System.nanoTime() - start;
 
             List<DispatchResult> after = activePlan.planBook().all();

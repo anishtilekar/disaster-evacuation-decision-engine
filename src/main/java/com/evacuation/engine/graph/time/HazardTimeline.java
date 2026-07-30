@@ -1,7 +1,9 @@
 package com.evacuation.engine.graph.time;
 
 import java.time.LocalDateTime;
+import java.util.HashSet;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * Immutable, queryable hazard-timeline snapshot — STRIDE's generalization of the old boolean
@@ -150,6 +152,58 @@ public final class HazardTimeline {
     /** @return when this timeline was compiled. */
     public LocalDateTime builtAt() {
         return builtAt;
+    }
+
+    /**
+     * The edge slots and node indices that transitioned into LETHAL between two compiles of the same
+     * graph, restricted to buckets from {@code fromBucket} onward.
+     *
+     * @param edgeSlots   CSR slots newly LETHAL in {@code after} but not in {@code before}
+     * @param nodeIndices dense node indices newly LETHAL in {@code after} but not in {@code before}
+     */
+    public record NewlyLethalCells(Set<Integer> edgeSlots, Set<Integer> nodeIndices) {
+    }
+
+    /**
+     * Diffs two timelines compiled against the same graph, reporting exactly the cells that became
+     * LETHAL from {@code fromBucket} onward — the set a repair pass needs to know what to replan
+     * around, and no more. Past buckets are settled history no repair can act on, so the scan starts
+     * at {@code fromBucket} rather than 0.
+     *
+     * <p>Diffing two full compiled states rather than re-deriving a hazard's footprint from its own
+     * geometry is deliberate: recomputing it here would mean reimplementing the compiler's
+     * distance-from-front reasoning and hoping the two agree. Asking the timeline what actually
+     * changed is a single source of truth for the one question that decides which platoons get
+     * replanned.
+     *
+     * @param before     the timeline as it stood before the event that triggered this compile
+     * @param after      the newly compiled timeline
+     * @param fromBucket the first bucket worth reporting a change in, typically "now"
+     * @return the newly-LETHAL edge slots and node indices, each possibly empty but never {@code null}
+     */
+    public static NewlyLethalCells newlyLethal(HazardTimeline before, HazardTimeline after,
+                                               int fromBucket) {
+        Set<Integer> edgeSlots = new HashSet<>();
+        for (int slot = 0; slot < after.edgeSlotCount; slot++) {
+            for (int bucket = fromBucket; bucket < after.horizonBuckets; bucket++) {
+                if (after.isEdgeLethal(slot, bucket) && !before.isEdgeLethal(slot, bucket)) {
+                    edgeSlots.add(slot);
+                    break;
+                }
+            }
+        }
+
+        Set<Integer> nodeIndices = new HashSet<>();
+        for (int nodeIndex = 0; nodeIndex < after.nodeCount; nodeIndex++) {
+            for (int bucket = fromBucket; bucket < after.horizonBuckets; bucket++) {
+                if (after.isNodeLethal(nodeIndex, bucket) && !before.isNodeLethal(nodeIndex, bucket)) {
+                    nodeIndices.add(nodeIndex);
+                    break;
+                }
+            }
+        }
+
+        return new NewlyLethalCells(Set.copyOf(edgeSlots), Set.copyOf(nodeIndices));
     }
 
     /**

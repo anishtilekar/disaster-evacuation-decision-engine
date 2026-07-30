@@ -3,12 +3,14 @@ package com.evacuation.engine.web;
 import com.evacuation.engine.dto.common.ApiResponse;
 import com.evacuation.engine.dto.hazard.request.HazardEventRequest;
 import com.evacuation.engine.dto.hazard.response.HazardEventResponse;
+import com.evacuation.engine.dto.hazard.response.HazardTimelineResponse;
 import com.evacuation.engine.service.HazardService;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -46,5 +48,18 @@ public class HazardController {
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(ApiResponse.success("Hazard event created", response));
+    }
+
+    /**
+     * A compact read of the currently-compiled hazard timeline, for a map overlay to shade cells as
+     * the time slider passes each one's lethal onset.
+     *
+     * @return {@code 200 OK} with the onsets, or a {@code null} data payload if no timeline has been
+     *         compiled yet
+     */
+    @GetMapping("/timeline")
+    public ResponseEntity<ApiResponse<HazardTimelineResponse>> getTimeline() {
+        HazardTimelineResponse response = hazardService.getTimeline();
+        return ResponseEntity.ok(ApiResponse.success("Hazard timeline retrieved", response));
     }
 }
