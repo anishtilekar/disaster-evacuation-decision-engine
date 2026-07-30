@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STRIDE — Live Evacuation Map</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Fira+Code:wght@400;500;600&display=swap');
+
+:root {
+  --bg-app:        #eef2f7;
+  --bg-surface:    #ffffff;
+  --bg-subtle:     #f6f8fb;
+  --blue-900:      #1a2d4f;
+  --blue-700:      #1e4080;
+  --blue-600:      #2554a3;
+  --blue-500:      #3366cc;
+  --blue-400:      #5585d6;
+  --blue-100:      #dce8fb;
+  --blue-50:       #eef4ff;
+  --coral:         #e84855;
+  --coral-light:   #fff0f1;
+  --coral-border:  #fac5c8;
+  --amber:         #f59e0b;
+  --amber-light:   #fffbeb;
+  --green:         #10b981;
+  --green-light:   #ecfdf5;
+  --purple:        #7c3aed;
+  --purple-light:  #f5f3ff;
+  --text-900:      #0f1f38;
+  --text-700:      #2c3e5c;
+  --text-500:      #5a6e8a;
+  --text-400:      #8399b5;
+  --border:        #dde5ef;
+  --border-strong: #c0cfe2;
+  --font-ui:       'DM Sans', sans-serif;
+  --font-data:     'Fira Code', monospace;
+  --radius-sm:     6px;
+  --radius:        10px;
+  --shadow-sm:     0 2px 10px rgba(15,31,56,0.08), 0 1px 3px rgba(15,31,56,0.04);
+  --shadow-md:     0 6px 24px rgba(15,31,56,0.10), 0 2px 6px rgba(15,31,56,0.05);
+}
+
+* , *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: var(--font-ui); background: var(--bg-app); color: var(--text-700);
+  font-size: 14px; line-height: 1.5; overflow: hidden;
+}
+button { font-family: inherit; cursor: pointer; }
+input, select { font-family: inherit; font-size: inherit; }
+
+#app { display: flex; height: 100vh; width: 100vw; }
+
+/* ── Sidebar ── */
+#sidebar {
+  width: 320px; flex-shrink: 0; background: var(--bg-surface); border-right: 1px solid var(--border);
+  overflow-y: auto; padding: 18px 16px 40px; z-index: 10;
+}
+#sidebar h1 { font-size: 17px; color: var(--blue-900); margin-bottom: 2px; }
+#sidebar .subtitle { font-size: 12px; color: var(--text-400); margin-bottom: 18px; }
+.panel {
+  background: var(--bg-subtle); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 12px 14px; margin-bottom: 12px;
+}
+.panel h2 {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-500);
+  margin-bottom: 10px; font-weight: 600;
+}
+.field { margin-bottom: 8px; }
+.field label { display: block; font-size: 11.5px; color: var(--text-500); margin-bottom: 3px; }
+.field input, .field select {
+  width: 100%; padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  background: #fff; color: var(--text-900); font-size: 13px;
+}
+.row { display: flex; gap: 8px; }
+.row > * { flex: 1; }
+button.btn {
+  width: 100%; padding: 8px 10px; border: none; border-radius: var(--radius-sm);
+  font-size: 13px; font-weight: 600; margin-top: 6px; transition: filter 0.15s;
+}
+button.btn:hover { filter: brightness(1.08); }
+button.btn:active { filter: brightness(0.95); }
+button.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: var(--blue-500); color: #fff; }
+.btn-danger  { background: var(--coral); color: #fff; }
+.btn-outline { background: #fff; color: var(--blue-600); border: 1px solid var(--border-strong) !important; border-width: 1px; }
+.btn-ghost   { background: var(--blue-50); color: var(--blue-700); }
+.hint { font-size: 11px; color: var(--text-400); margin-top: 4px; }
+.selection-tag {
+  font-family: var(--font-data); font-size: 11.5px; background: var(--blue-50); color: var(--blue-700);
+  border-radius: var(--radius-sm); padding: 5px 8px; margin-top: 6px; word-break: break-word;
+}
+.selection-tag.empty { color: var(--text-400); background: var(--bg-app); }
+.stat-row { display: flex; justify-content: space-between; font-size: 12.5px; padding: 2px 0; }
+.stat-row .k { color: var(--text-500); }
+.stat-row .v { font-family: var(--font-data); color: var(--text-900); font-weight: 600; }
+#shortfallList, #toastLog { max-height: 120px; overflow-y: auto; }
+.shortfall-item {
+  font-size: 12px; padding: 4px 6px; margin-top: 4px; background: var(--amber-light);
+  border-radius: var(--radius-sm); color: #92610a;
+}
+.legend-item { display: flex; align-items: center; gap: 7px; font-size: 12px; padding: 3px 0; color: var(--text-700); }
+.swatch { width: 14px; height: 4px; border-radius: 2px; flex-shrink: 0; }
+.dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+
+/* ── Map area ── */
+#mapWrap { position: relative; flex: 1; }
+#map { position: absolute; inset: 0; }
+
+#toast {
+  position: absolute; top: 14px; left: 50%; transform: translateX(-50%); z-index: 1000;
+  background: var(--blue-900); color: #fff; padding: 8px 16px; border-radius: 999px;
+  font-size: 12.5px; box-shadow: var(--shadow-md); display: none; max-width: 70%; text-align: center;
+}
+#toast.error { background: var(--coral); }
+#toast.show { display: block; }
+
+/* ── Time bar ── */
+#timebar {
+  position: absolute; left: 16px; right: 16px; bottom: 16px; z-index: 900;
+  background: rgba(255,255,255,0.96); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow-md); padding: 10px 16px; display: flex; align-items: center; gap: 12px;
+}
+#playBtn {
+  width: 34px; height: 34px; border-radius: 50%; border: none; background: var(--blue-600); color: #fff;
+  font-size: 14px; flex-shrink: 0;
+}
+#timebar input[type=range] { flex: 1; accent-color: var(--blue-500); }
+#clockLabel {
+  font-family: var(--font-data); font-size: 12.5px; color: var(--blue-900); min-width: 150px;
+  text-align: right; flex-shrink: 0;
+}
+
+.leaflet-popup-content { font-family: var(--font-ui); font-size: 12.5px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <h1>STRIDE Live Map</h1>
+    <div class="subtitle">Space-Time Reservation &amp; Incremental Dispatch</div>
+
+    <div class="panel">
+      <h2>Session</h2>
+      <div class="stat-row"><span class="k">Graph</span><span class="v" id="statGraph">—</span></div>
+      <div class="stat-row"><span class="k">Session</span><span class="v" id="statSession">inactive</span></div>
+      <div class="stat-row"><span class="k">Committed platoons</span><span class="v" id="statPlatoons">0</span></div>
+      <div class="stat-row"><span class="k">People placed</span><span class="v" id="statPeople">0</span></div>
+      <button class="btn btn-outline" id="reloadGraphBtn">Reload graph</button>
+    </div>
+
+    <div class="panel">
+      <h2>1 · Demo disaster</h2>
+      <div class="hint">Requests need a disaster + zone to reference. One is created on demand, or seed it explicitly.</div>
+      <button class="btn btn-ghost" id="seedDisasterBtn">Seed demo disaster + zone</button>
+      <div class="selection-tag empty" id="disasterTag">none yet</div>
+    </div>
+
+    <div class="panel">
+      <h2>2 · Evacuation requests</h2>
+      <div class="hint">Click the map to pick an origin node, or add random demand.</div>
+      <div class="selection-tag empty" id="nodeTag">click the map to select an origin</div>
+      <div class="row">
+        <div class="field"><label>People</label><input type="number" id="reqPeople" value="6" min="1"></div>
+        <div class="field"><label>Priority</label>
+          <select id="reqPriority">
+            <option>LOW</option><option selected>MEDIUM</option><option>HIGH</option><option>CRITICAL</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="addRequestBtn">Add request at selected node</button>
+      <div class="row">
+        <div class="field"><label>Random requests</label><input type="number" id="randomCount" value="30" min="1" max="200"></div>
+      </div>
+      <button class="btn btn-outline" id="addRandomBtn">Seed N random requests</button>
+      <div class="stat-row"><span class="k">Pending</span><span class="v" id="statPending">0</span></div>
+    </div>
+
+    <div class="panel">
+      <h2>3 · Dispatch</h2>
+      <button class="btn btn-primary" id="planBtn">Plan pending requests</button>
+      <div class="row">
+        <div class="field"><label>LNS iterations</label><input type="number" id="lnsIterations" value="20" min="1"></div>
+      </div>
+      <button class="btn btn-ghost" id="improveBtn">Run improvement pass</button>
+      <div id="shortfallList"></div>
+    </div>
+
+    <div class="panel">
+      <h2>4 · Hazard</h2>
+      <div class="hint">Click "place on map", then click a point for the hazard's origin.</div>
+      <button class="btn btn-outline" id="placeHazardBtn">Place hazard origin on map</button>
+      <div class="selection-tag empty" id="hazardTag">no origin selected</div>
+      <div class="field"><label>Type</label>
+        <select id="hazardType">
+          <option>FLOOD</option><option>EARTHQUAKE</option><option>CYCLONE</option><option>WILDFIRE</option>
+          <option>LANDSLIDE</option><option>TSUNAMI</option><option>INDUSTRIAL_ACCIDENT</option><option>OTHER</option>
+        </select>
+      </div>
+      <div class="row">
+        <div class="field"><label>Initial radius (m)</label><input type="number" id="hazardRadius" value="50" min="0"></div>
+        <div class="field"><label>Growth (m/min)</label><input type="number" id="hazardGrowth" value="40" min="1"></div>
+      </div>
+      <button class="btn btn-danger" id="postHazardBtn">Report hazard</button>
+    </div>
+
+    <div class="panel">
+      <h2>5 · Block a road</h2>
+      <div class="hint">Click a road on the map to select it.</div>
+      <div class="selection-tag empty" id="edgeTag">no road selected</div>
+      <div class="field"><label>Reason</label>
+        <select id="blockReason">
+          <option>FLOODING</option><option>LANDSLIDE</option><option>DEBRIS</option>
+          <option>STRUCTURAL_COLLAPSE</option><option>FIRE</option><option>FALLEN_TREE</option>
+          <option>MILITARY_OR_POLICE_RESTRICTION</option><option>OTHER</option>
+        </select>
+      </div>
+      <button class="btn btn-danger" id="blockRoadBtn">Block selected road</button>
+    </div>
+
+    <div class="panel">
+      <h2>Legend</h2>
+      <div class="legend-item"><span class="swatch" style="background:#8399b5"></span> Road (clear)</div>
+      <div class="legend-item"><span class="swatch" style="background:var(--amber)"></span> Hazard onset soon</div>
+      <div class="legend-item"><span class="swatch" style="background:var(--coral)"></span> Lethal now</div>
+      <div class="legend-item"><span class="dot" style="background:var(--green)"></span> Shelter</div>
+      <div class="legend-item"><span class="dot" style="background:var(--purple)"></span> Pending request</div>
+      <div class="legend-item"><span class="swatch" style="background:var(--blue-500)"></span> Committed route</div>
+      <div class="legend-item"><span class="swatch" style="background:var(--coral);height:6px"></span> Just repaired</div>
+    </div>
+  </aside>
+
+  <div id="mapWrap">
+    <div id="map"></div>
+    <div id="toast"></div>
+    <div id="timebar">
+      <button id="playBtn">▶</button>
+      <input type="range" id="slider" min="0" max="160" value="0" step="1">
+      <span id="clockLabel">bucket 0</span>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+(function () {
+  'use strict';
+
+  // ── State ──────────────────────────────────────────────────────────
+  let graph = null;                 // GraphMapResponse
+  let currentPlan = null;           // InstructionSetResponse
+  let previousWaypointKeys = new Map(); // platoonId -> serialized waypoints, for repair-diff flashing
+  let edgeOnsetBySlot = new Map();
+  let nodeOnsetByIndex = new Map();
+  let demoDisasterId = null;
+  let demoZoneId = null;
+  let selectedNodeIndex = null;
+  let selectedEdge = null;          // {slot, edgeDbId}
+  let placingHazard = false;
+  let hazardOrigin = null;          // {lat, lon}
+  let sliderBucket = 0;
+  let playTimer = null;
+
+  const PRIORITY_COLOR = { LOW: '#5585d6', MEDIUM: '#3366cc', HIGH: '#f59e0b', CRITICAL: '#e84855' };
+  const ROAD_CLEAR = '#8399b5';
+  const ROAD_SOON = '#f59e0b';
+  const ROAD_LETHAL = '#e84855';
+  const REPAIR_FLASH_MS = 4500;
+  const HAZARD_SOON_WINDOW_BUCKETS = 20;
+
+  // ── Leaflet setup ─────────────────────────────────────────────────
+  const map = L.map('map', { zoomControl: true }).setView([18.53, 73.84], 14);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors', maxZoom: 19
+  }).addTo(map);
+
+  const edgesLayer = L.layerGroup().addTo(map);
+  const nodeHazardLayer = L.layerGroup().addTo(map);
+  const sheltersLayer = L.layerGroup().addTo(map);
+  const platoonsLayer = L.layerGroup().addTo(map);
+  const selectionLayer = L.layerGroup().addTo(map);
+
+  const edgePolylineBySlot = new Map();
+  const platoonMarkers = new Map(); // platoonId -> { marker, poly, data }
+
+  // ── Small helpers ─────────────────────────────────────────────────
+  function toast(message, isError) {
+    const el = document.getElementById('toast');
+    el.textContent = message;
+    el.className = 'show' + (isError ? ' error' : '');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => { el.className = ''; }, isError ? 5000 : 2600);
+  }
+
+  async function api(method, path, body) {
+    const res = await fetch(path, {
+      method,
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined
+    });
+    let payload = null;
+    try { payload = await res.json(); } catch (e) { /* no body */ }
+    if (!res.ok || (payload && payload.success === false)) {
+      const message = (payload && payload.message) || (res.status + ' ' + res.statusText);
+      toast(message, true);
+      throw new Error(message);
+    }
+    return payload ? payload.data : null;
+  }
+
+  function randomContactNumber() {
+    let n = '9';
+    for (let i = 0; i < 9; i++) n += Math.floor(Math.random() * 10);
+    return n;
+  }
+
+  function fmtClock(date) {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+
+  // Jackson serializes LocalDateTime with up to nanosecond precision (e.g. "...T05:03:57.695633100"),
+  // which Date's ISO parser is not reliably able to read across browsers — only millisecond precision
+  // is guaranteed. The fractional part is truncated to 3 digits before parsing; losing sub-millisecond
+  // precision is immaterial for a clock label.
+  function parseServerDateTime(value) {
+    return new Date(value.replace(/(\.\d{3})\d*$/, '$1'));
+  }
+
+  // LocalDateTime has no timezone, so it is read back on the server as wall-clock time. Date's own
+  // toISOString() reports UTC, which would silently shift "now" by the local UTC offset (5:30 for
+  // this project's Pune deployment) — this instead formats the browser's own local wall clock,
+  // matching what LocalDateTime.now() on the server means when both run in the same timezone.
+  function toLocalIso(date) {
+    const pad = (n) => String(n).padStart(2, '0');
+    return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate()) +
+      'T' + pad(date.getHours()) + ':' + pad(date.getMinutes()) + ':' + pad(date.getSeconds());
+  }
+
+  // ── Graph loading & rendering ─────────────────────────────────────
+  async function loadGraph() {
+    graph = await api('GET', '/api/graph');
+    document.getElementById('statGraph').textContent =
+      graph.nodes.length + ' nodes, ' + graph.shelters.length + ' shelters';
+
+    edgesLayer.clearLayers();
+    edgePolylineBySlot.clear();
+    const bounds = [];
+
+    for (const node of graph.nodes) bounds.push([node.lat, node.lon]);
+
+    for (const edge of graph.edges) {
+      const from = graph.nodes[edge.fromNodeIndex];
+      const to = graph.nodes[edge.toNodeIndex];
+      if (!from || !to) continue;
+      const poly = L.polyline([[from.lat, from.lon], [to.lat, to.lon]], {
+        color: ROAD_CLEAR, weight: 2.5, opacity: 0.6
+      }).addTo(edgesLayer);
+      poly.on('click', (ev) => {
+        L.DomEvent.stopPropagation(ev);
+        selectEdge(edge);
+      });
+      edgePolylineBySlot.set(edge.slot, { poly, edge });
+    }
+
+    sheltersLayer.clearLayers();
+    for (const shelter of graph.shelters) {
+      L.circleMarker([shelter.lat, shelter.lon], {
+        radius: 7, color: '#0d9c6c', fillColor: '#10b981', fillOpacity: 0.9, weight: 2
+      }).bindPopup(
+        '<b>' + shelter.shelterName + '</b><br>capacity ' + shelter.availableCapacity +
+        '<br>' + shelter.status + (shelter.medicalFacility ? '<br>medical facility' : '')
+      ).addTo(sheltersLayer);
+    }
+
+    if (bounds.length) map.fitBounds(bounds, { padding: [24, 24] });
+  }
+
+  function nearestNodeIndex(lat, lon) {
+    let best = -1, bestD = Infinity;
+    for (const node of graph.nodes) {
+      if (!node.active) continue;
+      const dLat = node.lat - lat, dLon = node.lon - lon;
+      const d = dLat * dLat + dLon * dLon;
+      if (d < bestD) { bestD = d; best = node.nodeIndex; }
+    }
+    return best;
+  }
+
+  map.on('click', (ev) => {
+    if (!graph) return;
+    if (placingHazard) {
+      hazardOrigin = { lat: ev.latlng.lat, lon: ev.latlng.lng };
+      placingHazard = false;
+      document.getElementById('placeHazardBtn').textContent = 'Place hazard origin on map';
+      document.getElementById('hazardTag').className = 'selection-tag';
+      document.getElementById('hazardTag').textContent =
+        hazardOrigin.lat.toFixed(5) + ', ' + hazardOrigin.lon.toFixed(5);
+      selectionLayer.clearLayers();
+      L.circleMarker([hazardOrigin.lat, hazardOrigin.lon], {
+        radius: 6, color: '#e84855', fillColor: '#e84855', fillOpacity: 0.9
+      }).addTo(selectionLayer);
+      return;
+    }
+    const idx = nearestNodeIndex(ev.latlng.lat, ev.latlng.lng);
+    if (idx < 0) return;
+    selectedNodeIndex = idx;
+    const node = graph.nodes[idx];
+    document.getElementById('nodeTag').className = 'selection-tag';
+    document.getElementById('nodeTag').textContent = node.name + ' (node ' + idx + ')';
+    selectionLayer.clearLayers();
+    L.circleMarker([node.lat, node.lon], {
+      radius: 8, color: '#3366cc', fillColor: '#dce8fb', fillOpacity: 0.9, weight: 2
+    }).addTo(selectionLayer);
+  });
+
+  function selectEdge(edge) {
+    selectedEdge = edge;
+    document.getElementById('edgeTag').className = 'selection-tag';
+    document.getElementById('edgeTag').textContent =
+      'slot ' + edge.slot + ' (road #' + edge.edgeDbId + '), ' + edge.distanceKm.toFixed(2) + ' km';
+    for (const { poly } of edgePolylineBySlot.values()) poly.setStyle({ dashArray: null });
+    const entry = edgePolylineBySlot.get(edge.slot);
+    if (entry) { entry.poly.setStyle({ color: '#7c3aed', weight: 4, dashArray: '6 4' }); entry.poly.bringToFront(); }
+  }
+
+  // ── Demo disaster / zone bootstrap ────────────────────────────────
+  async function ensureDemoDisaster() {
+    if (demoDisasterId && demoZoneId) return;
+    const center = map.getCenter();
+    const disaster = await api('POST', '/api/disasters', {
+      disasterName: 'STRIDE Demo Disaster',
+      disasterType: 'FLOOD',
+      severityLevel: 'HIGH',
+      affectedRegion: 'Demo ward',
+      latitude: center.lat,
+      longitude: center.lng,
+      impactRadius: 1.0
+    });
+    demoDisasterId = disaster.disasterId;
+    const zone = await api('POST', '/api/disasters/zones', {
+      disasterId: demoDisasterId,
+      zoneName: 'Demo Zone',
+      riskLevel: 'HIGH',
+      latitude: center.lat,
+      longitude: center.lng,
+      population: 5000,
+      evacuationRequired: true
+    });
+    demoZoneId = zone.zoneId;
+    document.getElementById('disasterTag').className = 'selection-tag';
+    document.getElementById('disasterTag').textContent =
+      'disaster #' + demoDisasterId + ' / zone #' + demoZoneId;
+  }
+
+  // ── Evacuation requests ────────────────────────────────────────────
+  async function addRequest(nodeIndex, numberOfPeople, priority) {
+    await ensureDemoDisaster();
+    await api('POST', '/api/evacuation-requests', {
+      disasterId: demoDisasterId,
+      disasterZoneId: demoZoneId,
+      sourceRoadNodeId: graph.nodes[nodeIndex].dbNodeId,
+      requesterName: 'Demo Party',
+      contactNumber: randomContactNumber(),
+      numberOfPeople,
+      priority,
+      medicalAssistanceRequired: Math.random() < 0.1
+    });
+  }
+
+  // EvacuationRequestResponse carries no source-node reference, only disaster/zone identity, so a
+  // per-request marker cannot be placed from this response alone; the sidebar count is what is
+  // actually knowable here without adding a node id to that DTO for a demo-only convenience.
+  async function refreshPendingCount() {
+    const pending = await api('GET', '/api/evacuation-requests?status=PENDING');
+    document.getElementById('statPending').textContent = pending.length;
+  }
+
+  // A single request is planned immediately, not just queued, so "submit a request" and "see a
+  // route to the nearest eligible shelter" are the same demo beat. This plans everything currently
+  // PENDING, not just the request just added — if a random-seeded batch is still sitting unplanned
+  // it gets swept in too, which is correct: nothing is lost or double-planned.
+  document.getElementById('addRequestBtn').addEventListener('click', async () => {
+    if (selectedNodeIndex === null) { toast('Click the map to pick an origin node first', true); return; }
+    const people = parseInt(document.getElementById('reqPeople').value, 10) || 1;
+    const priority = document.getElementById('reqPriority').value;
+    try {
+      await addRequest(selectedNodeIndex, people, priority);
+      const data = await api('POST', '/api/dispatch/plan');
+      setCurrentPlan(data, true);
+      await refreshPendingCount();
+      toast('Request added and routed');
+    } catch (e) { /* toasted already */ }
+  });
+
+  document.getElementById('addRandomBtn').addEventListener('click', async () => {
+    const n = parseInt(document.getElementById('randomCount').value, 10) || 1;
+    const activeNodes = graph.nodes.filter(nd => nd.active);
+    if (!activeNodes.length) { toast('Graph has no active nodes', true); return; }
+    try {
+      await ensureDemoDisaster();
+      const priorities = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
+      const jobs = [];
+      for (let i = 0; i < n; i++) {
+        const node = activeNodes[Math.floor(Math.random() * activeNodes.length)];
+        const people = 1 + Math.floor(Math.random() * 12);
+        const priority = priorities[Math.floor(Math.random() * priorities.length)];
+        jobs.push(addRequest(node.nodeIndex, people, priority));
+      }
+      await Promise.all(jobs);
+      toast(n + ' random requests added');
+      await refreshPendingCount();
+    } catch (e) { /* toasted already */ }
+  });
+
+  document.getElementById('seedDisasterBtn').addEventListener('click', async () => {
+    try { await ensureDemoDisaster(); toast('Demo disaster ready'); } catch (e) { /* toasted */ }
+  });
+
+  document.getElementById('reloadGraphBtn').addEventListener('click', async () => {
+    try { await loadGraph(); toast('Graph reloaded'); } catch (e) { /* toasted */ }
+  });
+
+  // ── Dispatch / plan rendering ──────────────────────────────────────
+  function waypointKey(waypoints) {
+    return waypoints.map(w => w.nodeIndex + '@' + w.bucket).join('|');
+  }
+
+  function renderShortfalls(shortfalls) {
+    const list = document.getElementById('shortfallList');
+    list.innerHTML = '';
+    for (const s of shortfalls) {
+      const div = document.createElement('div');
+      div.className = 'shortfall-item';
+      div.textContent = 'Party ' + s.partyId + ': ' + s.unroutedSize + ' people unrouted (wave ' + s.failedAtWaveIndex + ')';
+      list.appendChild(div);
+    }
+  }
+
+  function setCurrentPlan(data, highlightDiff) {
+    const previous = previousWaypointKeys;
+    previousWaypointKeys = new Map();
+    currentPlan = data;
+
+    document.getElementById('statSession').textContent = data.sessionActive ? 'active' : 'inactive';
+    document.getElementById('statPlatoons').textContent = data.committed.length;
+    document.getElementById('statPeople').textContent =
+      data.committed.reduce((sum, p) => sum + p.size, 0);
+
+    const slider = document.getElementById('slider');
+    if (data.horizonBuckets) slider.max = data.horizonBuckets;
+
+    platoonsLayer.clearLayers();
+    platoonMarkers.clear();
+
+    for (const p of data.committed) {
+      const key = waypointKey(p.waypoints);
+      previousWaypointKeys.set(p.platoonId, key);
+      const changed = highlightDiff && previous.has(p.platoonId) && previous.get(p.platoonId) !== key;
+      const isNew = highlightDiff && !previous.has(p.platoonId);
+      const flash = changed || isNew;
+
+      const latlngs = p.waypoints.map(w => [w.lat, w.lon]);
+      const baseColor = PRIORITY_COLOR[p.priority] || PRIORITY_COLOR.MEDIUM;
+      const poly = L.polyline(latlngs, {
+        color: flash ? ROAD_LETHAL : baseColor,
+        weight: flash ? 5 : 3,
+        opacity: 0.85
+      }).bindPopup(
+        'Platoon ' + p.platoonId + ' (party ' + p.partyId + ')<br>' +
+        p.size + ' people, ' + p.priority + '<br>&rarr; ' + p.shelterName
+      ).addTo(platoonsLayer);
+
+      if (flash) {
+        setTimeout(() => poly.setStyle({ color: baseColor, weight: 3 }), REPAIR_FLASH_MS);
+      }
+
+      const marker = L.circleMarker(latlngs[0], {
+        radius: 5, color: '#1a2d4f', fillColor: baseColor, fillOpacity: 1, weight: 1.5
+      }).addTo(platoonsLayer);
+
+      platoonMarkers.set(p.platoonId, { marker, waypoints: p.waypoints });
+    }
+
+    renderShortfalls(data.shortfalls);
+    updatePlatoonPositions();
+  }
+
+  function interpolate(waypoints, bucket) {
+    if (bucket <= waypoints[0].bucket) return waypoints[0];
+    const last = waypoints[waypoints.length - 1];
+    if (bucket >= last.bucket) return last;
+    for (let i = 0; i < waypoints.length - 1; i++) {
+      const a = waypoints[i], b = waypoints[i + 1];
+      if (bucket >= a.bucket && bucket <= b.bucket) {
+        const span = b.bucket - a.bucket;
+        const frac = span === 0 ? 0 : (bucket - a.bucket) / span;
+        return { lat: a.lat + (b.lat - a.lat) * frac, lon: a.lon + (b.lon - a.lon) * frac };
+      }
+    }
+    return last;
+  }
+
+  function updatePlatoonPositions() {
+    for (const { marker, waypoints } of platoonMarkers.values()) {
+      const pos = interpolate(waypoints, sliderBucket);
+      marker.setLatLng([pos.lat, pos.lon]);
+    }
+  }
+
+  document.getElementById('planBtn').addEventListener('click', async () => {
+    try {
+      const data = await api('POST', '/api/dispatch/plan');
+      setCurrentPlan(data, false);
+      await refreshPendingCount();
+      toast('Plan run: ' + data.committed.length + ' platoons committed');
+    } catch (e) { /* toasted */ }
+  });
+
+  document.getElementById('improveBtn').addEventListener('click', async () => {
+    const iterations = parseInt(document.getElementById('lnsIterations').value, 10) || 1;
+    try {
+      const result = await api('POST', '/api/dispatch/improve?maxIterations=' + iterations);
+      toast('LNS: ' + result.accepted + '/' + result.iterationsRun + ' iterations accepted');
+      const data = await api('GET', '/api/dispatch/plan/current');
+      setCurrentPlan(data, true);
+    } catch (e) { /* toasted */ }
+  });
+
+  async function refreshCurrentPlan(highlightDiff) {
+    const data = await api('GET', '/api/dispatch/plan/current');
+    setCurrentPlan(data, highlightDiff);
+  }
+
+  // ── Hazard overlay & posting ───────────────────────────────────────
+  function updateHazardOverlay() {
+    for (const [slot, { poly }] of edgePolylineBySlot) {
+      const onset = edgeOnsetBySlot.get(slot);
+      if (onset === undefined) {
+        poly.setStyle({ color: ROAD_CLEAR, dashArray: null, weight: 2.5 });
+      } else if (sliderBucket >= onset) {
+        poly.setStyle({ color: ROAD_LETHAL, dashArray: null, weight: 3.5 });
+      } else if (onset - sliderBucket <= HAZARD_SOON_WINDOW_BUCKETS) {
+        poly.setStyle({ color: ROAD_SOON, dashArray: '4 3', weight: 3 });
+      } else {
+        poly.setStyle({ color: ROAD_CLEAR, dashArray: null, weight: 2.5 });
+      }
+    }
+
+    nodeHazardLayer.clearLayers();
+    for (const [nodeIndex, onset] of nodeOnsetByIndex) {
+      if (sliderBucket < onset - HAZARD_SOON_WINDOW_BUCKETS) continue;
+      const node = graph.nodes[nodeIndex];
+      if (!node) continue;
+      const lethal = sliderBucket >= onset;
+      L.circleMarker([node.lat, node.lon], {
+        radius: 5, color: lethal ? ROAD_LETHAL : ROAD_SOON,
+        fillColor: lethal ? ROAD_LETHAL : ROAD_SOON, fillOpacity: 0.8, weight: 1
+      }).addTo(nodeHazardLayer);
+    }
+  }
+
+  async function fetchHazardTimeline() {
+    const timeline = await api('GET', '/api/hazards/timeline');
+    edgeOnsetBySlot = new Map();
+    nodeOnsetByIndex = new Map();
+    if (timeline) {
+      for (const e of timeline.edgeOnsets) edgeOnsetBySlot.set(e.slot, e.lethalFromBucket);
+      for (const n of timeline.nodeOnsets) nodeOnsetByIndex.set(n.nodeIndex, n.lethalFromBucket);
+    }
+    updateHazardOverlay();
+  }
+
+  document.getElementById('placeHazardBtn').addEventListener('click', () => {
+    placingHazard = true;
+    document.getElementById('placeHazardBtn').textContent = 'Click the map…';
+  });
+
+  document.getElementById('postHazardBtn').addEventListener('click', async () => {
+    if (!hazardOrigin) { toast('Place the hazard origin on the map first', true); return; }
+    try {
+      await api('POST', '/api/hazards', {
+        description: 'Reported from the live map',
+        hazardType: document.getElementById('hazardType').value,
+        origin: { latitude: hazardOrigin.lat, longitude: hazardOrigin.lon },
+        initialRadiusMeters: parseFloat(document.getElementById('hazardRadius').value) || 0,
+        growthRateMetersPerMinute: parseFloat(document.getElementById('hazardGrowth').value) || 1,
+        eventStartTime: toLocalIso(new Date())
+      });
+      toast('Hazard reported — timeline recompiled, affected platoons repaired');
+      await fetchHazardTimeline();
+      await refreshCurrentPlan(true);
+    } catch (e) { /* toasted */ }
+  });
+
+  document.getElementById('blockRoadBtn').addEventListener('click', async () => {
+    if (!selectedEdge) { toast('Click a road on the map first', true); return; }
+    try {
+      await ensureDemoDisaster();
+      await api('POST', '/api/graph/blocked-roads', {
+        disasterId: demoDisasterId,
+        roadEdgeId: selectedEdge.edgeDbId,
+        blockageReason: document.getElementById('blockReason').value,
+        active: true
+      });
+      toast('Road blocked — timeline recompiled, affected platoons repaired');
+      await fetchHazardTimeline();
+      await refreshCurrentPlan(true);
+    } catch (e) { /* toasted */ }
+  });
+
+  // ── Time slider ─────────────────────────────────────────────────────
+  function updateClockLabel() {
+    const label = document.getElementById('clockLabel');
+    if (currentPlan && currentPlan.sessionActive && currentPlan.sessionEpoch) {
+      const epoch = parseServerDateTime(currentPlan.sessionEpoch);
+      const t = new Date(epoch.getTime() + sliderBucket * currentPlan.deltaSeconds * 1000);
+      label.textContent = 'bucket ' + sliderBucket + '  ·  ' + fmtClock(t);
+    } else {
+      label.textContent = 'bucket ' + sliderBucket;
+    }
+  }
+
+  document.getElementById('slider').addEventListener('input', (ev) => {
+    sliderBucket = parseInt(ev.target.value, 10);
+    updateClockLabel();
+    updatePlatoonPositions();
+    updateHazardOverlay();
+  });
+
+  document.getElementById('playBtn').addEventListener('click', () => {
+    const btn = document.getElementById('playBtn');
+    const slider = document.getElementById('slider');
+    if (playTimer) {
+      clearInterval(playTimer);
+      playTimer = null;
+      btn.textContent = '▶';
+      return;
+    }
+    btn.textContent = '❚❚';
+    playTimer = setInterval(() => {
+      const max = parseInt(slider.max, 10);
+      sliderBucket = Math.min(sliderBucket + 1, max);
+      slider.value = sliderBucket;
+      updateClockLabel();
+      updatePlatoonPositions();
+      updateHazardOverlay();
+      if (sliderBucket >= max) { clearInterval(playTimer); playTimer = null; btn.textContent = '▶'; }
+    }, 160);
+  });
+
+  // ── Boot ─────────────────────────────────────────────────────────
+  (async function boot() {
+    try {
+      await loadGraph();
+      await refreshPendingCount();
+      await fetchHazardTimeline();
+      await refreshCurrentPlan(false);
+    } catch (e) {
+      toast('Startup: ' + e.message, true);
+    }
+  })();
+})();
+</script>
+</body>
+</html>
