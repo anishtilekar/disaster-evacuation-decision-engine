@@ -28,3 +28,7 @@ target/
 # Python (tools/oracle/)
 __pycache__/
 *.pyc
+
+# Cached raw Overpass responses (graph.osm.cache-dir). Regenerated on demand from OSM, machine-local,
+# and large -- the ward GeoJSON in src/main/resources/ward/ is the committed input, not this.
+osm-cache/
