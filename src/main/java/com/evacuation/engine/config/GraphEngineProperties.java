@@ -33,6 +33,23 @@ public class GraphEngineProperties {
     private boolean seedOnStartup = true;
 
     /**
+     * Whether an unroutable graph at startup should stop the application instead of letting it come
+     * up unable to route.
+     *
+     * <p>{@code GraphStartupRunner} deliberately does not rethrow import or cache-build failures, so
+     * a bad ward config or an unreachable Overpass server cannot crash-loop the whole app. That is
+     * the right default locally and for demos, where an operator can retry the import — but it also
+     * means an instance can report a healthy start while being incapable of placing a single party.
+     * Setting this to {@code true} converts that state into a startup failure, which is what a
+     * production deployment behind a health check usually wants: fail visibly rather than serve a
+     * dead engine.
+     *
+     * <p>Applies to the NOT-READY verdicts (no snapshot, zero nodes) and to the DEGRADED ones (no
+     * edges, or no shelters) — all four leave the engine unable to route anyone anywhere.
+     */
+    private boolean failOnUnroutableGraph = false;
+
+    /**
      * Assumed maximum network speed, in km/h. Used as the divisor in the A* time heuristic — so it
      * must exceed every real edge speed for the heuristic to stay admissible — and as a fallback
      * speed for edges with no usable {@code maxspeed}.
