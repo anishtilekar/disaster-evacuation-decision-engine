@@ -12,7 +12,8 @@ public interface EvacuationRequestMapper {
     @Mapping(target = "evacuationRequestId", ignore = true)
     @Mapping(target = "disaster", ignore = true)
     @Mapping(target = "disasterZone", ignore = true)
-    // TODO: EvacuationRequestDTO carries no source-node field even though the entity requires sourceRoadNode (@NotNull) — this is a DTO/entity contract gap to resolve at the Service phase, not fixed here.
+    // Resolved and set by EvacuationRequestService from the DTO's sourceRoadNodeId, the same
+    // resolve-by-id-then-attach pattern GraphAdminService uses for its own associations.
     @Mapping(target = "sourceRoadNode", ignore = true)
     @Mapping(target = "status", ignore = true)
     @Mapping(target = "requestedAt", ignore = true)
