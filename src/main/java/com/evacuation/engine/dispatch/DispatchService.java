@@ -1,6 +1,9 @@
 package com.evacuation.engine.dispatch;
 
+import com.evacuation.engine.algorithm.AStarShortestPath;
 import com.evacuation.engine.algorithm.MultiTargetShelterSearch;
+import com.evacuation.engine.algorithm.ShortestPathAlgorithm;
+import com.evacuation.engine.algorithm.spacetime.Destination;
 import com.evacuation.engine.algorithm.spacetime.SearchResult;
 import com.evacuation.engine.algorithm.spacetime.TimeExpandedDijkstra;
 import com.evacuation.engine.algorithm.spacetime.TimedWalk;
@@ -80,6 +83,7 @@ public class DispatchService {
     private final ActivePlan activePlan;
     private final TimeExpandedDijkstra timeExpandedDijkstra;
     private final MultiTargetShelterSearch multiTargetShelterSearch;
+    private final AStarShortestPath aStarShortestPath;
     private final TimeModel timeModel;
     private final GraphEngineProperties properties;
 
@@ -187,6 +191,12 @@ public class DispatchService {
         int earliestDeparture = departureBucketFor(party, sessionEpoch, now);
         int stagger = properties.getDispatch().getConvoyStaggerBuckets();
 
+        // Fixed once per party — every wave shares the same chosen destination (or the same "nearest
+        // shelter" fallback), never re-derived per wave.
+        Destination destination = party.destinationNodeIndex() != null
+                ? new Destination.FixedNode(party.destinationNodeIndex())
+                : Destination.anyShelter();
+
         for (Platoon platoon : platoons) {
             int departureBucket = earliestDeparture + platoon.waveIndex() * stagger;
 
@@ -194,6 +204,7 @@ public class DispatchService {
                     policy,
                     platoon.originNodeIndex(),
                     departureBucket,
+                    destination,
                     eligibilityFor(platoon.size(), shelterRemaining),
                     platoon.medicalPreferred(),
                     ledger,
@@ -211,12 +222,15 @@ public class DispatchService {
                 return;
             }
 
-            // Charge the shelter now, so the next platoon's eligibility filter already sees it.
-            shelterRemaining.merge(result.shelter().shelterId(), -platoon.size(), Integer::sum);
+            // Charge the shelter now, so the next platoon's eligibility filter already sees it — only
+            // meaningful when this platoon was actually routed to one.
+            if (result.shelter() != null) {
+                shelterRemaining.merge(result.shelter().shelterId(), -platoon.size(), Integer::sum);
+            }
 
             DispatchResult dispatchResult = new DispatchResult(
                     party.partyId(), platoon.platoonId(), platoon.waveIndex(), platoon.size(),
-                    party.priority(), platoon.medicalPreferred(), result);
+                    party.priority(), platoon.medicalPreferred(), destination, result);
             committed.add(dispatchResult);
             planBook.commit(dispatchResult);
         }
@@ -277,7 +291,7 @@ public class DispatchService {
     }
 
     /**
-     * How little room a party has to manoeuvre, as free-flow cost to its nearest shelter — larger is
+     * How little room a party has to manoeuvre, as free-flow cost to its destination — larger is
      * more constrained, and an unreachable party is maximally so.
      *
      * <p>The probe deliberately ignores capacity: "free-flow" means exactly that, and the existing
@@ -285,9 +299,20 @@ public class DispatchService {
      * is a proxy for the design's "fewest feasible shelter options", not a count of them — a party
      * whose nearest help is far away has the least slack, which is the property the ordering
      * actually wants.
+     *
+     * <p>A party with its own chosen destination has no shelter options to be constrained by in the
+     * first place, so it is probed with {@link AStarShortestPath} — the exact free-flow single-target
+     * counterpart to {@link MultiTargetShelterSearch}'s multi-target probe, previously unused in
+     * production — against that one node instead.
      */
     private double estimateConstrainedness(Party party, GraphSnapshot snapshot,
                                            TraversalPolicy policy) {
+        if (party.destinationNodeIndex() != null) {
+            ShortestPathAlgorithm.PathResult probe = aStarShortestPath.findPath(
+                    snapshot, policy, party.originNodeIndex(), party.destinationNodeIndex());
+            return probe.reachable() ? probe.totalCost() : Double.POSITIVE_INFINITY;
+        }
+
         MultiTargetShelterSearch.ShelterPathResult probe =
                 multiTargetShelterSearch.findNearestEligibleShelter(
                         snapshot, policy, party.originNodeIndex(),
@@ -368,7 +393,10 @@ public class DispatchService {
             remaining.put(shelter.shelterId(), shelter.availableCapacity());
         }
         for (DispatchResult result : planBook.all()) {
-            remaining.merge(result.searchResult().shelter().shelterId(), -result.size(), Integer::sum);
+            GraphSnapshot.ShelterRef shelter = result.searchResult().shelter();
+            if (shelter != null) {
+                remaining.merge(shelter.shelterId(), -result.size(), Integer::sum);
+            }
         }
         return remaining;
     }

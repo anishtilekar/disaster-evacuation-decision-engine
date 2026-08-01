@@ -21,6 +21,9 @@ import com.evacuation.engine.repository.evacuation.EvacuationRequestRepository;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -106,6 +109,66 @@ public class DispatchOrchestrationService {
     }
 
     /**
+     * Plans exactly one request — the USER-facing counterpart to {@link #planPending}, which sweeps
+     * every {@link EvacuationStatus#PENDING} request at once. Reuses the same {@link DispatchService}
+     * call, against the same retained {@link ActivePlan} session, so a self-service route is a full
+     * member of the live plan: it reserves real space-time cells, and {@code RepairService}
+     * re-routes it exactly like any admin-dispatched platoon when a road it depends on is later
+     * blocked.
+     *
+     * <p>Only the requester who submitted this request, or an admin, may trigger it — enforced here
+     * rather than left to {@code SecurityConfig}'s path matchers, since the matcher for this endpoint
+     * can only see "an authenticated user called it", never "the right one did".
+     *
+     * @param requestId the request to route
+     * @param now       the wall-clock instant this call is happening at
+     * @return the resolved routes this call committed and what it could not place; if the request was
+     *         already planned (not {@link EvacuationStatus#PENDING}), the current plan is returned
+     *         unchanged rather than committing a second platoon for the same party
+     * @throws IllegalArgumentException if no such request exists
+     * @throws AccessDeniedException    if the caller is neither the request's own submitter nor an admin
+     */
+    @Transactional
+    public InstructionSetResponse planOne(Long requestId, LocalDateTime now) {
+        EvacuationRequest request = evacuationRequestRepository.findById(requestId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Evacuation request " + requestId + " not found"));
+
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        boolean isAdmin = authentication.getAuthorities().stream()
+                .anyMatch(authority -> authority.getAuthority().equals("ROLE_ADMIN"));
+        boolean isOwner = request.getRequestedBy() != null
+                && request.getRequestedBy().getUsername().equals(authentication.getName());
+        if (!isAdmin && !isOwner) {
+            throw new AccessDeniedException(
+                    "Not authorized to route evacuation request " + requestId);
+        }
+
+        GraphSnapshot snapshot = graphCache.get();
+
+        if (request.getStatus() != EvacuationStatus.PENDING) {
+            log.info("Evacuation request {} is already {}; returning the current plan rather than "
+                    + "committing a second platoon for it", requestId, request.getStatus());
+            return currentPlan();
+        }
+
+        Party party = Party.fromEvacuationRequest(request, snapshot);
+        InstructionSet instructionSet = dispatchService.plan(List.of(party), now);
+
+        boolean committed = instructionSet.committed().stream()
+                .anyMatch(result -> result.partyId() == request.getEvacuationRequestId());
+        if (committed) {
+            request.setStatus(EvacuationStatus.ASSIGNED);
+            evacuationRequestRepository.save(request);
+        }
+
+        log.info("Routed evacuation request {}: {} platoon(s) committed, {} shortfall(s)",
+                requestId, instructionSet.committed().size(), instructionSet.shortfalls().size());
+
+        return toResponse(instructionSet, snapshot);
+    }
+
+    /**
      * The current session's standing plan — every platoon presently committed. Carries no
      * shortfalls: a shortfall is a property of one specific planning attempt, not of the plan book's
      * standing state, which holds only what is actually committed.
@@ -161,10 +224,32 @@ public class DispatchOrchestrationService {
             waypoints.add(waypointOf(step.to(), step.isWait(), snapshot));
         }
 
+        String destinationKind;
+        Long shelterId;
+        String destinationName;
+        double destinationLat;
+        double destinationLon;
+        if (shelter != null) {
+            destinationKind = "SHELTER";
+            shelterId = shelter.shelterId();
+            destinationName = shelter.shelterName();
+            destinationLat = shelter.lat();
+            destinationLon = shelter.lon();
+        } else {
+            // A FixedNode route has no shelter to name — resolve the display point from where the
+            // walk actually ends, the same node the requester chose.
+            int arrivalNodeIndex = walk.arrival().nodeIndex();
+            destinationKind = "CHOSEN";
+            shelterId = null;
+            destinationName = null;
+            destinationLat = snapshot.nodeLat(arrivalNodeIndex);
+            destinationLon = snapshot.nodeLon(arrivalNodeIndex);
+        }
+
         return new PlatoonPlanResponse(
                 result.partyId(), result.platoonId(), result.waveIndex(), result.size(),
                 result.priority().name(), result.medicalPreferred(),
-                shelter.shelterId(), shelter.shelterName(), shelter.lat(), shelter.lon(),
+                destinationKind, shelterId, destinationName, destinationLat, destinationLon,
                 waypoints, walk.origin().bucket(), walk.arrival().bucket(),
                 walk.totalCost(), walk.totalDistanceKm());
     }

@@ -118,6 +118,19 @@ public class GraphEngineProperties {
                 "school", 500,
                 "community_centre", 150
         ));
+
+        /**
+         * Caps how many OSM-derived shelters are imported, keeping the highest-capacity ones. A real
+         * ward's OSM data yields dozens of schools and hospitals — every one a real building, but far
+         * more than any single disaster response would actually stand up as an official shelter, and
+         * far too many for capacity contention to ever be visible: with 65 shelters and 25,000+ seats
+         * of combined capacity, demand essentially never fills even one, so the plan never has to
+         * choose a second-best shelter or split a party across waves for lack of room. Fewer, larger
+         * shelters is what an actual designated-shelter list looks like, and it is also what makes
+         * the engine's capacity handling — the reason this project exists — observable in a demo. Set
+         * to {@code 0} or negative to disable the cap and import every recognized amenity.
+         */
+        private int maxShelters = 20;
     }
 
     /**

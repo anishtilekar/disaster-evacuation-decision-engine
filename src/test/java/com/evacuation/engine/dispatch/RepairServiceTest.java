@@ -1,6 +1,9 @@
 package com.evacuation.engine.dispatch;
 
+import com.evacuation.engine.algorithm.AStarShortestPath;
+import com.evacuation.engine.algorithm.HaversineHeuristic;
 import com.evacuation.engine.algorithm.MultiTargetShelterSearch;
+import com.evacuation.engine.algorithm.spacetime.Destination;
 import com.evacuation.engine.algorithm.spacetime.TimeExpandedDijkstra;
 import com.evacuation.engine.algorithm.spacetime.TimedWalk;
 import com.evacuation.engine.config.GraphEngineProperties;
@@ -30,6 +33,7 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -205,7 +209,7 @@ class RepairServiceTest {
         DispatchService dispatchService = new DispatchService(
                 graphCache, hazardTimelineCache, activePlan,
                 new TimeExpandedDijkstra(timeModel, properties), new MultiTargetShelterSearch(),
-                timeModel, properties);
+                new AStarShortestPath(new HaversineHeuristic(properties)), timeModel, properties);
         RepairService repairService = new RepairService(
                 graphCache, hazardTimelineCache, activePlan,
                 new TimeExpandedDijkstra(timeModel, properties), timeModel);
@@ -368,5 +372,57 @@ class RepairServiceTest {
         assertTrue(harness.activePlan().planBook().get(before.platoonId()).isEmpty());
         // Its future reservation was genuinely given back, not merely orphaned in the plan book.
         assertEquals(0, harness.activePlan().ledger().edgeOccupancyAt(SLOT_A_DIRECT, 1));
+    }
+
+    /**
+     * The exit test for storing {@code Destination} on {@link DispatchResult}: a platoon routed to a
+     * destination the requester chose for themselves — not a shelter — must be repaired to the exact
+     * same destination, never silently falling back to "nearest shelter" once its original route is
+     * torn up.
+     */
+    @Test
+    @DisplayName("A repaired FixedNode platoon is re-routed to the exact same chosen destination")
+    void repairedFixedNodePlatoonKeepsTheSameDestination() {
+        Harness harness = buildHarness(buildSnapshotWithDetour());
+        LocalDateTime epoch = LocalDateTime.now();
+
+        // Routed to the shelter's own node directly, by chosen destination rather than by shelter
+        // eligibility — the same node a shelter search would land on, reached a different way.
+        Party chosenDestinationParty = new Party(PARTY_A_ID, ORIGIN_A, MAX_PLATOON_SIZE,
+                EvacuationPriority.MEDIUM, false, epoch, SHELTER_NODE);
+
+        InstructionSet dispatched =
+                harness.dispatchService().plan(List.of(chosenDestinationParty), epoch);
+        assertTrue(dispatched.shortfalls().isEmpty());
+        assertEquals(1, dispatched.committed().size());
+
+        DispatchResult before = dispatched.committed().get(0);
+        assertEquals(new Destination.FixedNode(SHELTER_NODE), before.destination());
+        assertNull(before.searchResult().shelter(), "a FixedNode route has no shelter to report");
+        assertTrue(usesSlot(before.searchResult().walk(), SLOT_A_DIRECT));
+
+        RoadEdge blockedEdge = RoadEdge.builder().edgeId(EDGE_DB_ID_A_DIRECT).build();
+        BlockedRoad blockedRoad = BlockedRoad.builder().roadEdge(blockedEdge).active(true).build();
+        when(harness.blockedRoadRepository().findActiveWithEdge()).thenReturn(List.of(blockedRoad));
+        harness.hazardTimelineCache().reload(harness.snapshot(), harness.activePlan().sessionEpoch());
+
+        InstructionSet repair = harness.repairService()
+                .onEvent(Set.of(SLOT_A_DIRECT), Set.of(), epoch.plusSeconds(30));
+
+        assertEquals(1, repair.committed().size());
+        assertTrue(repair.shortfalls().isEmpty(), "a detour exists");
+        DispatchResult after = repair.committed().get(0);
+
+        // The point of the test: destination identity survives the repair, replayed verbatim rather
+        // than re-derived — and the walk actually ends where that destination says it should.
+        assertEquals(before.destination(), after.destination());
+        assertNull(after.searchResult().shelter());
+        assertEquals(SHELTER_NODE, after.searchResult().walk().arrival().nodeIndex());
+
+        // The new route avoids the blocked edge and goes the long way round to reach that same node.
+        TimedWalk repairedWalk = after.searchResult().walk();
+        assertFalse(usesSlot(repairedWalk, SLOT_A_DIRECT));
+        assertTrue(usesSlot(repairedWalk, SLOT_A_TO_DETOUR));
+        assertTrue(usesSlot(repairedWalk, SLOT_DETOUR_TO_SHELTER));
     }
 }

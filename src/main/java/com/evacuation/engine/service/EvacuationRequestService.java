@@ -3,6 +3,7 @@ package com.evacuation.engine.service;
 import com.evacuation.engine.dto.evacuation.request.EvacuationRequestDTO;
 import com.evacuation.engine.dto.evacuation.response.EvacuationRequestResponse;
 import com.evacuation.engine.mapper.evacuation.EvacuationRequestMapper;
+import com.evacuation.engine.model.entity.AppUser;
 import com.evacuation.engine.model.entity.Disaster;
 import com.evacuation.engine.model.entity.DisasterZone;
 import com.evacuation.engine.model.entity.EvacuationRequest;
@@ -12,9 +13,11 @@ import com.evacuation.engine.repository.disaster.DisasterRepository;
 import com.evacuation.engine.repository.disaster.DisasterZoneRepository;
 import com.evacuation.engine.repository.evacuation.EvacuationRequestRepository;
 import com.evacuation.engine.repository.graph.RoadNodeRepository;
+import com.evacuation.engine.repository.security.AppUserRepository;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -46,6 +49,7 @@ public class EvacuationRequestService {
     private final DisasterRepository disasterRepository;
     private final DisasterZoneRepository disasterZoneRepository;
     private final RoadNodeRepository roadNodeRepository;
+    private final AppUserRepository appUserRepository;
 
     /**
      * Records a new evacuation request, pending dispatch.
@@ -69,16 +73,34 @@ public class EvacuationRequestService {
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Road node " + request.getSourceRoadNodeId() + " not found"));
 
+        RoadNode destinationRoadNode = null;
+        if (request.getDestinationRoadNodeId() != null) {
+            destinationRoadNode = roadNodeRepository.findById(request.getDestinationRoadNodeId())
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "Road node " + request.getDestinationRoadNodeId() + " not found"));
+        }
+
+        String username = SecurityContextHolder.getContext().getAuthentication().getName();
+        AppUser requestedBy = appUserRepository.findByUsername(username)
+                .orElseThrow(() -> new IllegalStateException(
+                        "Authenticated principal '" + username + "' has no matching account"));
+
         EvacuationRequest entity = evacuationRequestMapper.toEntity(request);
         entity.setDisaster(disaster);
         entity.setDisasterZone(disasterZone);
         entity.setSourceRoadNode(sourceRoadNode);
+        entity.setDestinationRoadNode(destinationRoadNode);
+        entity.setRequestedBy(requestedBy);
 
         EvacuationRequest saved = evacuationRequestRepository.save(entity);
 
-        log.info("Evacuation request {} created: {} people from node {}, priority {}",
+        log.info("Evacuation request {} created: {} people from node {}{}, priority {}",
                 saved.getEvacuationRequestId(), saved.getNumberOfPeople(),
-                sourceRoadNode.getNodeId(), saved.getPriority());
+                sourceRoadNode.getNodeId(),
+                destinationRoadNode != null
+                        ? " to chosen destination node " + destinationRoadNode.getNodeId()
+                        : "",
+                saved.getPriority());
 
         return evacuationRequestMapper.toResponse(saved);
     }
@@ -93,6 +115,20 @@ public class EvacuationRequestService {
     @Transactional(readOnly = true)
     public List<EvacuationRequestResponse> findByStatus(EvacuationStatus status) {
         return evacuationRequestRepository.findByStatus(status).stream()
+                .map(evacuationRequestMapper::toResponse)
+                .toList();
+    }
+
+    /**
+     * The authenticated caller's own submissions, across every status — the USER-facing counterpart
+     * to {@link #findByStatus}, which is the ADMIN-only view of the whole queue.
+     *
+     * @return the current principal's requests, response-mapped
+     */
+    @Transactional(readOnly = true)
+    public List<EvacuationRequestResponse> findMine() {
+        String username = SecurityContextHolder.getContext().getAuthentication().getName();
+        return evacuationRequestRepository.findByRequestedBy_Username(username).stream()
                 .map(evacuationRequestMapper::toResponse)
                 .toList();
     }

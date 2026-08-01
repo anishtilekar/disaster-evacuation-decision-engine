@@ -45,4 +45,8 @@ public interface EvacuationRequestRepository extends JpaRepository<EvacuationReq
             EvacuationStatus status
     );
 
+
+    // A USER's own submissions, for GET /api/evacuation-requests/mine
+    List<EvacuationRequest> findByRequestedBy_Username(String username);
+
 }

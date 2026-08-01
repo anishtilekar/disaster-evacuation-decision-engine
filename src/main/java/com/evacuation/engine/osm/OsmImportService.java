@@ -30,9 +30,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Orchestrates the one-shot import of a real Pune ward into the persistence model.
@@ -64,6 +66,9 @@ public class OsmImportService {
 
     /** Nominal impact radius (km) for the seeded demo disaster. */
     private static final double SAMPLE_IMPACT_RADIUS_KM = 1.0;
+
+    /** Minimum hospitals kept when the shelter set is capped -- see {@link #capShelters}. */
+    private static final int MEDICAL_SHELTER_FLOOR = 3;
 
     private final WardPolygonLoader wardPolygonLoader;
     private final OverpassClient overpassClient;
@@ -182,8 +187,13 @@ public class OsmImportService {
         }
         roadEdgeRepository.saveAll(edges);
 
-        // Shelters: real OSM amenities clipped to the ward.
+        // Shelters: real OSM amenities clipped to the ward, capped to the configured count -- see
+        // maxShelters' own Javadoc for why the cap exists at all.
         List<Shelter> shelters = osmShelterExtractor.extract(response.elements, ward);
+        int maxShelters = props.getOsm().getMaxShelters();
+        if (maxShelters > 0 && shelters.size() > maxShelters) {
+            shelters = capShelters(shelters, maxShelters);
+        }
         shelterRepository.saveAll(shelters);
 
         // One sample disaster centred on the ward, for route-optimization demos.
@@ -242,5 +252,38 @@ public class OsmImportService {
 
     private static String truncate(String value, int maxLength) {
         return value.length() > maxLength ? value.substring(0, maxLength) : value;
+    }
+
+    /**
+     * Keeps the highest-capacity shelters up to {@code maxShelters}, but reserves a floor of medical
+     * facilities first.
+     *
+     * <p>A plain capacity-descending sort silently eliminates every hospital: this ward's
+     * {@code shelterCapacityByAmenity} rates a school at 500 and a hospital at only 300, so an
+     * unqualified top-N-by-capacity keeps schools exclusively. That is not just a skew — it makes the
+     * medical-preference term in the dispatch cost model untestable, since a medical-preferred party
+     * can never actually reach a medical-facility shelter to prefer. Reserving
+     * {@link #MEDICAL_SHELTER_FLOOR} hospital slots first, then filling the remainder by capacity as
+     * before, keeps the cap's purpose (small enough that demand contends for shelter space) without
+     * silently deleting the one feature that purpose would otherwise hide.
+     */
+    private static List<Shelter> capShelters(List<Shelter> shelters, int maxShelters) {
+        int medicalFloor = Math.min(MEDICAL_SHELTER_FLOOR, maxShelters);
+
+        List<Shelter> medical = shelters.stream()
+                .filter(Shelter::getMedicalFacility)
+                .sorted(Comparator.comparingInt(Shelter::getCapacity).reversed())
+                .limit(medicalFloor)
+                .collect(Collectors.toCollection(ArrayList::new));
+
+        List<Shelter> rest = shelters.stream()
+                .filter(shelter -> !medical.contains(shelter))
+                .sorted(Comparator.comparingInt(Shelter::getCapacity).reversed())
+                .limit(Math.max(0, maxShelters - medical.size()))
+                .toList();
+
+        List<Shelter> capped = new ArrayList<>(medical);
+        capped.addAll(rest);
+        return capped;
     }
 }

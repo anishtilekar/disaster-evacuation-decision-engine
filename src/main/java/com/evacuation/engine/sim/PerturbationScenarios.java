@@ -1,5 +1,6 @@
 package com.evacuation.engine.sim;
 
+import com.evacuation.engine.algorithm.spacetime.Destination;
 import com.evacuation.engine.algorithm.spacetime.SearchResult;
 import com.evacuation.engine.algorithm.spacetime.SpaceTimeState;
 import com.evacuation.engine.algorithm.spacetime.TimeExpandedDijkstra;
@@ -164,7 +165,8 @@ public final class PerturbationScenarios {
 
             List<DispatchResult> affected = new ArrayList<>();
             for (DispatchResult result : before) {
-                if (result.searchResult().shelter().shelterId() == closedShelterId) {
+                GraphSnapshot.ShelterRef shelter = result.searchResult().shelter();
+                if (shelter != null && shelter.shelterId() == closedShelterId) {
                     affected.add(result);
                 }
             }
@@ -190,7 +192,7 @@ public final class PerturbationScenarios {
                                 && shelterRemaining.getOrDefault(shelter.shelterId(), 0) >= original.size();
 
                 SearchResult replanned = timeExpandedDijkstra.searchSpaceTime(
-                        policy, anchor.nodeIndex(), anchor.bucket(), eligibility,
+                        policy, anchor.nodeIndex(), anchor.bucket(), original.destination(), eligibility,
                         original.medicalPreferred(), ledger, original.size());
 
                 if (!replanned.feasible()
@@ -203,7 +205,7 @@ public final class PerturbationScenarios {
 
                 DispatchResult repaired = new DispatchResult(
                         original.partyId(), original.platoonId(), original.waveIndex(), original.size(),
-                        original.priority(), original.medicalPreferred(), replanned);
+                        original.priority(), original.medicalPreferred(), original.destination(), replanned);
                 planBook.commit(repaired);
                 committed.add(repaired);
             }
@@ -338,7 +340,7 @@ public final class PerturbationScenarios {
             if (slowdownAbsorbed) {
                 planBook.commit(new DispatchResult(
                         original.partyId(), platoonId, original.waveIndex(), original.size(),
-                        original.priority(), original.medicalPreferred(),
+                        original.priority(), original.medicalPreferred(), original.destination(),
                         new SearchResult(true, stretched, original.searchResult().shelter())));
             } else {
                 ledger.rollback(platoonId, journal);
@@ -394,7 +396,10 @@ public final class PerturbationScenarios {
             remaining.put(shelter.shelterId(), shelter.availableCapacity());
         }
         for (DispatchResult result : planBook.all()) {
-            remaining.merge(result.searchResult().shelter().shelterId(), -result.size(), Integer::sum);
+            GraphSnapshot.ShelterRef shelter = result.searchResult().shelter();
+            if (shelter != null) {
+                remaining.merge(shelter.shelterId(), -result.size(), Integer::sum);
+            }
         }
         return remaining;
     }

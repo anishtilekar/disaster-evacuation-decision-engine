@@ -1,5 +1,7 @@
 package com.evacuation.engine.sim;
 
+import com.evacuation.engine.algorithm.AStarShortestPath;
+import com.evacuation.engine.algorithm.HaversineHeuristic;
 import com.evacuation.engine.algorithm.MultiTargetShelterSearch;
 import com.evacuation.engine.algorithm.spacetime.TimeExpandedDijkstra;
 import com.evacuation.engine.algorithm.spacetime.TimedWalk;
@@ -80,7 +82,8 @@ class PerturbationScenariosTest {
         ActivePlan activePlan = new ActivePlan();
         TimeExpandedDijkstra search = new TimeExpandedDijkstra(timeModel, properties);
         DispatchService dispatchService = new DispatchService(graphCache, hazardTimelineCache,
-                activePlan, search, new MultiTargetShelterSearch(), timeModel, properties);
+                activePlan, search, new MultiTargetShelterSearch(),
+                new AStarShortestPath(new HaversineHeuristic(properties)), timeModel, properties);
         RepairService repairService = new RepairService(
                 graphCache, hazardTimelineCache, activePlan, search, timeModel);
         PerturbationScenarios perturbations = new PerturbationScenarios(
@@ -318,7 +321,8 @@ class PerturbationScenariosTest {
         ActivePlan activePlan = new ActivePlan();
         TimeExpandedDijkstra search = new TimeExpandedDijkstra(timeModel, properties);
         DispatchService dispatchService = new DispatchService(graphCache, hazardTimelineCache,
-                activePlan, search, new MultiTargetShelterSearch(), timeModel, properties);
+                activePlan, search, new MultiTargetShelterSearch(),
+                new AStarShortestPath(new HaversineHeuristic(properties)), timeModel, properties);
         RepairService repairService = new RepairService(
                 graphCache, hazardTimelineCache, activePlan, search, timeModel);
         PerturbationScenarios perturbations = new PerturbationScenarios(

@@ -59,6 +59,17 @@ import java.util.function.Predicate;
  * working dispatch loop has been verified against the hard gate added here. What is implemented:
  * shelter sink arcs, wait arcs (now capacity-gated), movement arcs (now capacity-gated), the C3
  * hazard-feasibility check including the beta margin, and exposure pricing of RISKY cells.
+ *
+ * <p><strong>The goal is a {@link Destination}, not always a shelter.</strong> {@link
+ * Destination.AnyEligibleShelter} is the multi-target virtual-super-sink described above.
+ * {@link Destination.FixedNode} is a single chosen node, and its sink arc costs exactly
+ * {@code 0} — no medical-mismatch term applies, since there is no shelter to mismatch. A
+ * zero-cost sink arc is still {@code >= 0}, so the termination argument above is untouched: the
+ * first settle of the target state is already optimal, and the search can stop there. One honest
+ * limitation carries over unchanged from the shelter case rather than being introduced fresh here:
+ * arriving at a {@code FixedNode} reserves no node capacity in the {@link ReservationLedger}, the
+ * same as arriving at a shelter today — a sink is "leave the network", not "occupy this cell", for
+ * both destination kinds alike.
  */
 @Component
 @Slf4j
@@ -76,29 +87,36 @@ public class TimeExpandedDijkstra {
     private final GraphEngineProperties properties;
 
     /**
-     * Searches for the cheapest hazard-feasible space-time path from an origin state to any eligible
-     * shelter within the compiled horizon.
+     * Searches for the cheapest hazard-feasible space-time path from an origin state to the given
+     * {@link Destination} within the compiled horizon.
      *
      * <p>Shelter eligibility (open status, capacity, and so on) is entirely the caller's business via
      * the predicate — the same delegation convention as the spatial multi-target search. This class
      * knows reachability and cost, not selection policy; the one selection concern it does price,
      * medical fit, arrives as a boolean and a configured penalty rather than as logic.
+     * {@code eligibility} and {@code medicalPreferred} are consulted only when {@code destination} is
+     * {@link Destination.AnyEligibleShelter}; a {@link Destination.FixedNode} search ignores both.
      *
      * @param originNodeIndex  dense index of the departure node
      * @param departureBucket  the bucket the party departs at, relative to the timeline's epoch
-     * @param eligibility      the caller's shelter filter; only shelters it accepts can terminate the search
-     * @param medicalPreferred whether this party pays the mismatch penalty at non-medical shelters
+     * @param destination      what the search is trying to reach — any eligible shelter, or one
+     *                         fixed node
+     * @param eligibility      the caller's shelter filter; only shelters it accepts can terminate the
+     *                         search; ignored for a {@link Destination.FixedNode} search
+     * @param medicalPreferred whether this party pays the mismatch penalty at non-medical shelters;
+     *                         ignored for a {@link Destination.FixedNode} search
      * @param ledger           the reservation ledger this platoon's move must fit against; consulted
      *                         read-only — this search never reserves anything itself
      * @param platoonSize      how many people this search is routing at once, checked against the
      *                         ledger's residual capacity on every candidate arc and wait
-     * @return the cheapest feasible walk and the shelter it reaches, or the infeasible result; never
-     *         {@code null}
-     * @throws IllegalArgumentException if {@code departureBucket} is negative or {@code platoonSize}
-     *                                  is not positive
+     * @return the cheapest feasible walk (and the shelter it reaches, for a shelter search), or the
+     *         infeasible result; never {@code null}
+     * @throws IllegalArgumentException if {@code departureBucket} is negative, {@code platoonSize} is
+     *                                  not positive, or {@code destination} names a node outside the
+     *                                  snapshot
      */
     public SearchResult searchSpaceTime(TraversalPolicy policy, int originNodeIndex,
-                                        int departureBucket,
+                                        int departureBucket, Destination destination,
                                         Predicate<GraphSnapshot.ShelterRef> eligibility,
                                         boolean medicalPreferred, ReservationLedger ledger,
                                         int platoonSize) {
@@ -115,6 +133,7 @@ public class TimeExpandedDijkstra {
         GraphSnapshot snapshot = policy.snapshot();
         HazardTimeline timeline = policy.timeline();
         int horizon = timeModel.horizonBuckets();
+        int nodeCount = snapshot.nodeCount();
 
         // Guard clauses: a departure past the horizon, or from a node unusable at departure time,
         // cannot begin a feasible walk.
@@ -125,22 +144,40 @@ public class TimeExpandedDijkstra {
 
         // Eligible shelters, indexed by hosting node so a settled state checks its sinks in O(1).
         // A node may host several (a medical and an ordinary shelter can share one), and they are
-        // kept apart deliberately: under medicalPreferred their sink costs differ.
-        Map<Integer, List<GraphSnapshot.ShelterRef>> eligibleByNode = new HashMap<>();
-        for (GraphSnapshot.ShelterRef shelter : snapshot.shelters()) {
-            if (eligibility.test(shelter)) {
-                eligibleByNode.computeIfAbsent(shelter.nodeIndex(), key -> new ArrayList<>()).add(shelter);
+        // kept apart deliberately: under medicalPreferred their sink costs differ. Only built for a
+        // shelter search — a FixedNode search instead validates and remembers its single target.
+        Map<Integer, List<GraphSnapshot.ShelterRef>> eligibleByNode = Map.of();
+        int fixedTargetNodeIndex = UNSET;
+
+        if (destination instanceof Destination.FixedNode fixedNode) {
+            fixedTargetNodeIndex = fixedNode.targetNodeIndex();
+            if (fixedTargetNodeIndex >= nodeCount) {
+                throw new IllegalArgumentException(
+                        "targetNodeIndex must be a valid node index in [0, " + nodeCount
+                                + "), got " + fixedTargetNodeIndex);
             }
-        }
-        if (eligibleByNode.isEmpty()) {
-            log.debug("Space-time search from node {} bucket {}: no eligible shelters at all",
-                    originNodeIndex, departureBucket);
-            return SearchResult.infeasible(new SpaceTimeState(originNodeIndex, departureBucket));
+            if (fixedTargetNodeIndex == originNodeIndex) {
+                // Already there: the trivial walk is optimal by construction, cost 0.
+                return SearchResult.toNode(
+                        TimedWalk.trivial(new SpaceTimeState(originNodeIndex, departureBucket)));
+            }
+        } else {
+            eligibleByNode = new HashMap<>();
+            for (GraphSnapshot.ShelterRef shelter : snapshot.shelters()) {
+                if (eligibility.test(shelter)) {
+                    eligibleByNode.computeIfAbsent(shelter.nodeIndex(), key -> new ArrayList<>())
+                            .add(shelter);
+                }
+            }
+            if (eligibleByNode.isEmpty()) {
+                log.debug("Space-time search from node {} bucket {}: no eligible shelters at all",
+                        originNodeIndex, departureBucket);
+                return SearchResult.infeasible(new SpaceTimeState(originNodeIndex, departureBucket));
+            }
         }
 
         // Per-call scratch over the N*T virtual state space, addressed by SpaceTimeState.flatIndex.
         // Allocated per call for now; the improvement-loop phase introduces per-thread pooling.
-        int nodeCount = snapshot.nodeCount();
         int stateCount = nodeCount * horizon;
         double[] dist = new double[stateCount];
         int[] parentFlat = new int[stateCount];
@@ -194,17 +231,25 @@ public class TimeExpandedDijkstra {
             int v = flat / horizon;
             int b = flat % horizon;
 
-            // 1. Shelter sink arcs — the multi-target virtual-super-sink, capacity-blind this phase.
-            List<GraphSnapshot.ShelterRef> sheltersHere = eligibleByNode.get(v);
-            if (sheltersHere != null) {
-                for (GraphSnapshot.ShelterRef shelter : sheltersHere) {
-                    double sinkCost = entryCost
-                            + (medicalPreferred && !shelter.medicalFacility()
-                                    ? medicalMismatchPenalty : 0.0);
-                    if (sinkCost < bestSinkCost) {
-                        bestSinkCost = sinkCost;
-                        bestSinkFlat = flat;
-                        bestShelter = shelter;
+            // 1. Sink arc(s) — either the multi-target shelter super-sink, capacity-blind this phase,
+            //    or a single zero-cost arc firing exactly at the fixed target node.
+            if (fixedTargetNodeIndex != UNSET) {
+                if (v == fixedTargetNodeIndex && entryCost < bestSinkCost) {
+                    bestSinkCost = entryCost;
+                    bestSinkFlat = flat;
+                }
+            } else {
+                List<GraphSnapshot.ShelterRef> sheltersHere = eligibleByNode.get(v);
+                if (sheltersHere != null) {
+                    for (GraphSnapshot.ShelterRef shelter : sheltersHere) {
+                        double sinkCost = entryCost
+                                + (medicalPreferred && !shelter.medicalFacility()
+                                        ? medicalMismatchPenalty : 0.0);
+                        if (sinkCost < bestSinkCost) {
+                            bestSinkCost = sinkCost;
+                            bestSinkFlat = flat;
+                            bestShelter = shelter;
+                        }
                     }
                 }
             }
@@ -291,11 +336,16 @@ public class TimeExpandedDijkstra {
         SpaceTimeState origin = new SpaceTimeState(originNodeIndex, departureBucket);
         TimedWalk walk = new TimedWalk(origin, List.copyOf(steps), bestSinkCost, totalDistanceKm);
 
-        log.debug("Space-time search from node {} bucket {}: shelter '{}' (id {}) at cost {} over {} steps",
-                originNodeIndex, departureBucket, bestShelter.shelterName(), bestShelter.shelterId(),
-                bestSinkCost, steps.size());
+        if (bestShelter != null) {
+            log.debug("Space-time search from node {} bucket {}: shelter '{}' (id {}) at cost {} over {} steps",
+                    originNodeIndex, departureBucket, bestShelter.shelterName(), bestShelter.shelterId(),
+                    bestSinkCost, steps.size());
+            return SearchResult.of(walk, bestShelter);
+        }
 
-        return SearchResult.of(walk, bestShelter);
+        log.debug("Space-time search from node {} bucket {}: reached fixed target node {} at cost {} over {} steps",
+                originNodeIndex, departureBucket, fixedTargetNodeIndex, bestSinkCost, steps.size());
+        return SearchResult.toNode(walk);
     }
 
     /**

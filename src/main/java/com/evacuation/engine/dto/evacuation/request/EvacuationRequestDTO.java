@@ -29,6 +29,9 @@ public class EvacuationRequestDTO {
     @NotNull(message = "Source road node ID is required")
     private Long sourceRoadNodeId;
 
+    /** Optional: a destination the requester chose for themselves. Null routes to the nearest eligible shelter. */
+    private Long destinationRoadNodeId;
+
     @NotBlank(message = "Requester name is required")
     @Size(max = 150, message = "Requester name cannot exceed 150 characters")
     private String requesterName;

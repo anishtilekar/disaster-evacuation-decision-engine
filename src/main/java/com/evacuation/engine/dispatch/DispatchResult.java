@@ -1,5 +1,6 @@
 package com.evacuation.engine.dispatch;
 
+import com.evacuation.engine.algorithm.spacetime.Destination;
 import com.evacuation.engine.algorithm.spacetime.SearchResult;
 import com.evacuation.engine.model.enums.EvacuationPriority;
 
@@ -30,15 +31,22 @@ import com.evacuation.engine.model.enums.EvacuationPriority;
  *                         {@link Platoon} to know how many people this result accounts for
  * @param priority         the owning {@link Party#priority()} at the time this was committed
  * @param medicalPreferred the {@link Platoon#medicalPreferred()} this result was searched under
+ * @param destination      what this platoon was searched toward — carried here, not just at
+ *                         dispatch time, so a repair or an LNS iteration can replan the exact same
+ *                         platoon toward the exact same {@link Destination} it originally committed
+ *                         to, rather than silently falling back to "nearest shelter"
  * @param searchResult     the search's own outcome
  */
 public record DispatchResult(long partyId, long platoonId, int waveIndex, int size,
                              EvacuationPriority priority, boolean medicalPreferred,
-                             SearchResult searchResult) {
+                             Destination destination, SearchResult searchResult) {
 
     public DispatchResult {
         if (priority == null) {
             throw new IllegalArgumentException("priority must not be null");
+        }
+        if (destination == null) {
+            throw new IllegalArgumentException("destination must not be null");
         }
         if (searchResult == null) {
             throw new IllegalArgumentException("searchResult must not be null");

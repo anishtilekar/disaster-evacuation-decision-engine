@@ -12,9 +12,13 @@ public interface EvacuationRequestMapper {
     @Mapping(target = "evacuationRequestId", ignore = true)
     @Mapping(target = "disaster", ignore = true)
     @Mapping(target = "disasterZone", ignore = true)
-    // Resolved and set by EvacuationRequestService from the DTO's sourceRoadNodeId, the same
-    // resolve-by-id-then-attach pattern GraphAdminService uses for its own associations.
+    // Resolved and set by EvacuationRequestService from the DTO's sourceRoadNodeId/
+    // destinationRoadNodeId, the same resolve-by-id-then-attach pattern GraphAdminService uses for
+    // its own associations.
     @Mapping(target = "sourceRoadNode", ignore = true)
+    @Mapping(target = "destinationRoadNode", ignore = true)
+    // Stamped by EvacuationRequestService from the authenticated principal, never client input.
+    @Mapping(target = "requestedBy", ignore = true)
     @Mapping(target = "status", ignore = true)
     @Mapping(target = "requestedAt", ignore = true)
     @Mapping(target = "createdAt", ignore = true)

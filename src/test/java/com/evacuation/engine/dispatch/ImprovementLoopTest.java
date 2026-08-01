@@ -1,5 +1,7 @@
 package com.evacuation.engine.dispatch;
 
+import com.evacuation.engine.algorithm.AStarShortestPath;
+import com.evacuation.engine.algorithm.HaversineHeuristic;
 import com.evacuation.engine.algorithm.MultiTargetShelterSearch;
 import com.evacuation.engine.algorithm.spacetime.TimeExpandedDijkstra;
 import com.evacuation.engine.config.GraphEngineProperties;
@@ -117,10 +119,11 @@ class ImprovementLoopTest {
 
         ActivePlan activePlan = new ActivePlan();
         TimeExpandedDijkstra search = new TimeExpandedDijkstra(timeModel, properties);
+        AStarShortestPath aStar = new AStarShortestPath(new HaversineHeuristic(properties));
         DispatchService dispatchService = new DispatchService(graphCache, hazardTimelineCache,
-                activePlan, search, new MultiTargetShelterSearch(), timeModel, properties);
+                activePlan, search, new MultiTargetShelterSearch(), aStar, timeModel, properties);
         ImprovementLoop improvementLoop = new ImprovementLoop(graphCache, hazardTimelineCache,
-                activePlan, search, new MultiTargetShelterSearch(), timeModel);
+                activePlan, search, new MultiTargetShelterSearch(), aStar, timeModel);
 
         return new Harness(snapshot, activePlan, dispatchService, improvementLoop);
     }

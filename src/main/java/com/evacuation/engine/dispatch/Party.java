@@ -29,10 +29,14 @@ import java.time.LocalDateTime;
  * @param medicalAssistanceRequired whether this party's platoons pay the shelter mismatch penalty
  *                                   at a non-medical-facility shelter
  * @param requestedAt             the design's {@code r_i}, kept as a real timestamp — see above
+ * @param destinationNodeIndex    dense CSR index of a destination this party chose for itself, or
+ *                                {@code null} to route to the nearest eligible shelter — the same
+ *                                distinction {@link com.evacuation.engine.algorithm.spacetime.Destination}
+ *                                draws, translated one level up from the search into the request
  */
 public record Party(long partyId, int originNodeIndex, int numberOfPeople,
                     EvacuationPriority priority, boolean medicalAssistanceRequired,
-                    LocalDateTime requestedAt) {
+                    LocalDateTime requestedAt, Integer destinationNodeIndex) {
 
     public Party {
         if (originNodeIndex < 0) {
@@ -47,16 +51,28 @@ public record Party(long partyId, int originNodeIndex, int numberOfPeople,
         if (requestedAt == null) {
             throw new IllegalArgumentException("requestedAt must not be null");
         }
+        if (destinationNodeIndex != null && destinationNodeIndex < 0) {
+            throw new IllegalArgumentException(
+                    "destinationNodeIndex must be >= 0 when present, got " + destinationNodeIndex);
+        }
+    }
+
+    /** Convenience for the common case: no chosen destination, route to the nearest eligible shelter. */
+    public Party(long partyId, int originNodeIndex, int numberOfPeople,
+                EvacuationPriority priority, boolean medicalAssistanceRequired,
+                LocalDateTime requestedAt) {
+        this(partyId, originNodeIndex, numberOfPeople, priority, medicalAssistanceRequired,
+                requestedAt, null);
     }
 
     /**
-     * Translates a persisted request into a {@code Party}, resolving its source node against the
-     * current snapshot.
+     * Translates a persisted request into a {@code Party}, resolving its source (and, if chosen, its
+     * destination) node against the current snapshot.
      *
-     * @throws IllegalStateException if the request's source node is not present in {@code snapshot}
-     *                                — a genuine data-consistency problem (a stale or orphaned
-     *                                request referencing a node the current graph no longer has),
-     *                                not something a caller can recover from by retrying
+     * @throws IllegalStateException if the request's source or destination node is not present in
+     *                                {@code snapshot} — a genuine data-consistency problem (a stale
+     *                                or orphaned request referencing a node the current graph no
+     *                                longer has), not something a caller can recover from by retrying
      */
     public static Party fromEvacuationRequest(EvacuationRequest request, GraphSnapshot snapshot) {
         long sourceNodeDbId = request.getSourceRoadNode().getNodeId();
@@ -68,12 +84,25 @@ public record Party(long partyId, int originNodeIndex, int numberOfPeople,
                             + ", which is not present in the current graph snapshot");
         }
 
+        Integer destinationNodeIndex = null;
+        if (request.getDestinationRoadNode() != null) {
+            long destinationNodeDbId = request.getDestinationRoadNode().getNodeId();
+            destinationNodeIndex = snapshot.indexOfDbNodeId(destinationNodeDbId);
+            if (destinationNodeIndex == null) {
+                throw new IllegalStateException(
+                        "Evacuation request " + request.getEvacuationRequestId()
+                                + " references destination node " + destinationNodeDbId
+                                + ", which is not present in the current graph snapshot");
+            }
+        }
+
         return new Party(
                 request.getEvacuationRequestId(),
                 originNodeIndex,
                 request.getNumberOfPeople(),
                 request.getPriority(),
                 Boolean.TRUE.equals(request.getMedicalAssistanceRequired()),
-                request.getRequestedAt());
+                request.getRequestedAt(),
+                destinationNodeIndex);
     }
 }

@@ -23,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -175,6 +176,19 @@ public class GraphAdminService {
                 epoch);
 
         return blockedRoadMapper.toResponse(saved);
+    }
+
+    /**
+     * Every currently-active blockage — the admin console's list of what's actually closed right
+     * now, and what an "unblock" action is choosing among.
+     *
+     * @return active blockages, response-mapped
+     */
+    @Transactional(readOnly = true)
+    public List<BlockedRoadResponse> listActiveBlockedRoads() {
+        return blockedRoadRepository.findByActive(true).stream()
+                .map(blockedRoadMapper::toResponse)
+                .toList();
     }
 
     /**

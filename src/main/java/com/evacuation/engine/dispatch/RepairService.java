@@ -195,7 +195,7 @@ public class RepairService {
                         && shelterRemaining.getOrDefault(shelter.shelterId(), 0) >= original.size();
 
         SearchResult replanned = timeExpandedDijkstra.searchSpaceTime(
-                policy, anchor.nodeIndex(), anchor.bucket(), eligibility,
+                policy, anchor.nodeIndex(), anchor.bucket(), original.destination(), eligibility,
                 original.medicalPreferred(), ledger, original.size());
 
         // Reservation can still refuse a walk the search accepted; reserveWalk is all-or-nothing, so
@@ -217,7 +217,7 @@ public class RepairService {
         // against the instructions already issued.
         DispatchResult repaired = new DispatchResult(
                 original.partyId(), original.platoonId(), original.waveIndex(), original.size(),
-                original.priority(), original.medicalPreferred(), replanned);
+                original.priority(), original.medicalPreferred(), original.destination(), replanned);
 
         planBook.commit(repaired);
         committed.add(repaired);
@@ -234,7 +234,10 @@ public class RepairService {
             remaining.put(shelter.shelterId(), shelter.availableCapacity());
         }
         for (DispatchResult result : planBook.all()) {
-            remaining.merge(result.searchResult().shelter().shelterId(), -result.size(), Integer::sum);
+            GraphSnapshot.ShelterRef shelter = result.searchResult().shelter();
+            if (shelter != null) {
+                remaining.merge(shelter.shelterId(), -result.size(), Integer::sum);
+            }
         }
         return remaining;
     }

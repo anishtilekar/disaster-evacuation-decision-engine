@@ -18,6 +18,8 @@ import java.util.Objects;
                 @Index(name = "idx_evac_request_disaster", columnList = "disaster_id"),
                 @Index(name = "idx_evac_request_zone", columnList = "disaster_zone_id"),
                 @Index(name = "idx_evac_request_source_node", columnList = "source_node_id"),
+                @Index(name = "idx_evac_request_destination_node", columnList = "destination_node_id"),
+                @Index(name = "idx_evac_request_requested_by", columnList = "requested_by_user_id"),
                 @Index(name = "idx_evac_request_status", columnList = "status"),
                 @Index(name = "idx_evac_request_priority", columnList = "priority"),
                 @Index(name = "idx_evac_request_time", columnList = "requested_at")
@@ -28,7 +30,7 @@ import java.util.Objects;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-@ToString(exclude = {"disaster", "disasterZone", "sourceRoadNode"})
+@ToString(exclude = {"disaster", "disasterZone", "sourceRoadNode", "destinationRoadNode", "requestedBy"})
 public class EvacuationRequest {
 
     @Id
@@ -65,6 +67,36 @@ public class EvacuationRequest {
             "handler"
     })
     private RoadNode sourceRoadNode;
+
+
+    /*
+     * A destination the requester chose for themselves, e.g. home or a named address — not a
+     * shelter. Nullable: null means "route to the nearest eligible shelter", today's only behaviour
+     * and still the default. See Destination.FixedNode / Party.destinationNodeIndex for how this
+     * reaches the dispatch engine.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "destination_node_id")
+    @JsonIgnoreProperties({
+            "outgoingEdges",
+            "incomingEdges",
+            "hibernateLazyInitializer",
+            "handler"
+    })
+    private RoadNode destinationRoadNode;
+
+
+    /*
+     * The AppUser who submitted this request, when it came in through an authenticated USER
+     * session -- stamped by EvacuationRequestService from SecurityContextHolder, never client
+     * input. Nullable so a pre-Part-2 or admin-entered request (no submitting USER) stays valid.
+     * This is what GET /api/evacuation-requests/mine and the ownership check on
+     * POST /api/evacuation-requests/{id}/route key off.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "requested_by_user_id")
+    @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
+    private AppUser requestedBy;
 
 
     @NotBlank(message = "Requester name is required")

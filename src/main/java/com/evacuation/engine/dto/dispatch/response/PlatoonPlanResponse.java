@@ -12,10 +12,13 @@ import java.util.List;
  * @param size             how many people this platoon carries
  * @param priority         the owning party's priority, as its enum name
  * @param medicalPreferred whether this platoon was searched with a medical-facility preference
- * @param shelterId        the destination shelter's id
- * @param shelterName      the destination shelter's display name
- * @param shelterLat       destination latitude
- * @param shelterLon       destination longitude
+ * @param destinationKind  {@code "SHELTER"} for a nearest-eligible-shelter route, {@code "CHOSEN"}
+ *                         for a route to a destination the requester picked themselves
+ * @param shelterId        the destination shelter's id, or {@code null} for a {@code "CHOSEN"} route
+ * @param destinationName  the destination shelter's display name, or {@code null} for a
+ *                         {@code "CHOSEN"} route with no name to show
+ * @param destinationLat   destination latitude
+ * @param destinationLon   destination longitude
  * @param waypoints        the walk's states in order, origin first — a frontend interpolates
  *                         between consecutive waypoints by bucket to animate the platoon smoothly
  *                         rather than jumping node to node
@@ -26,8 +29,8 @@ import java.util.List;
  */
 public record PlatoonPlanResponse(long partyId, long platoonId, int waveIndex, int size,
                                   String priority, boolean medicalPreferred,
-                                  long shelterId, String shelterName,
-                                  double shelterLat, double shelterLon,
+                                  String destinationKind, Long shelterId, String destinationName,
+                                  double destinationLat, double destinationLon,
                                   List<RouteWaypoint> waypoints,
                                   int departureBucket, int arrivalBucket,
                                   double totalCost, double totalDistanceKm) {

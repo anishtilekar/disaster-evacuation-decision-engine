@@ -1,5 +1,7 @@
 package com.evacuation.engine.sim;
 
+import com.evacuation.engine.algorithm.AStarShortestPath;
+import com.evacuation.engine.algorithm.HaversineHeuristic;
 import com.evacuation.engine.algorithm.MultiTargetShelterSearch;
 import com.evacuation.engine.algorithm.spacetime.TimeExpandedDijkstra;
 import com.evacuation.engine.algorithm.spacetime.TimedWalk;
@@ -132,12 +134,13 @@ class SimulatorTest {
         TimeExpandedDijkstra search = new TimeExpandedDijkstra(timeModel, properties);
         MultiTargetShelterSearch shelterSearch = new MultiTargetShelterSearch();
 
+        AStarShortestPath aStar = new AStarShortestPath(new HaversineHeuristic(properties));
         IndependentDijkstraStrategy independentDijkstraStrategy =
                 new IndependentDijkstraStrategy(search, properties, timeModel);
         DispatchService dispatchService = new DispatchService(graphCache, hazardTimelineCache,
-                activePlan, search, shelterSearch, timeModel, properties);
+                activePlan, search, shelterSearch, aStar, timeModel, properties);
         ImprovementLoop improvementLoop = new ImprovementLoop(graphCache, hazardTimelineCache,
-                activePlan, search, shelterSearch, timeModel);
+                activePlan, search, shelterSearch, aStar, timeModel);
         DemandGenerator demandGenerator = new DemandGenerator(42L);
 
         Simulator simulator = new Simulator(graphCache, hazardTimelineCache, activePlan,

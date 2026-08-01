@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STRIDE — Sign in</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&display=swap');
+
+:root {
+  --bg-app:        #eef2f7;
+  --bg-surface:    #ffffff;
+  --blue-900:      #1a2d4f;
+  --blue-600:      #2554a3;
+  --blue-500:      #3366cc;
+  --blue-50:       #eef4ff;
+  --coral:         #e84855;
+  --coral-light:   #fff0f1;
+  --coral-border:  #fac5c8;
+  --green:         #10b981;
+  --green-light:   #ecfdf5;
+  --text-900:      #0f1f38;
+  --text-500:      #5a6e8a;
+  --text-400:      #8399b5;
+  --border:        #dde5ef;
+  --border-strong: #c0cfe2;
+  --font-ui:       'DM Sans', sans-serif;
+  --radius:        10px;
+  --radius-sm:     6px;
+  --shadow-md:     0 6px 24px rgba(15,31,56,0.10), 0 2px 6px rgba(15,31,56,0.05);
+}
+
+* , *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: var(--font-ui); background: var(--bg-app); color: var(--text-500);
+  font-size: 14px; line-height: 1.5;
+  display: flex; align-items: center; justify-content: center;
+}
+.card {
+  width: 340px; background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow-md); padding: 28px 26px;
+}
+.card h1 { font-size: 18px; color: var(--blue-900); margin-bottom: 2px; }
+.card .subtitle { font-size: 12px; color: var(--text-400); margin-bottom: 20px; }
+.field { margin-bottom: 12px; }
+.field label { display: block; font-size: 11.5px; color: var(--text-500); margin-bottom: 4px; }
+.field input {
+  width: 100%; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  background: #fff; color: var(--text-900); font-size: 13.5px; font-family: inherit;
+}
+button.btn {
+  width: 100%; padding: 9px 10px; border: none; border-radius: var(--radius-sm);
+  font-size: 13.5px; font-weight: 600; margin-top: 6px; background: var(--blue-500); color: #fff;
+  cursor: pointer; transition: filter 0.15s;
+}
+button.btn:hover { filter: brightness(1.08); }
+.banner {
+  font-size: 12.5px; border-radius: var(--radius-sm); padding: 8px 10px; margin-bottom: 14px;
+}
+.banner.error { background: var(--coral-light); border: 1px solid var(--coral-border); color: #9a1f2b; }
+.banner.info  { background: var(--green-light); color: #0a7a56; }
+.hint { font-size: 11px; color: var(--text-400); margin-top: 16px; line-height: 1.6; }
+.hint code { font-family: monospace; background: var(--blue-50); padding: 1px 4px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>STRIDE</h1>
+  <div class="subtitle">Space-Time Reservation &amp; Incremental Dispatch Engine</div>
+
+  <div id="errorBanner" class="banner error" style="display:none;">
+    Incorrect username or password.
+  </div>
+  <div id="logoutBanner" class="banner info" style="display:none;">
+    Signed out.
+  </div>
+
+  <form method="post" action="/login">
+    <input type="hidden" name="_csrf" id="csrfInput" value="">
+    <div class="field">
+      <label for="username">Username</label>
+      <input type="text" id="username" name="username" autocomplete="username" required autofocus>
+    </div>
+    <div class="field">
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password" autocomplete="current-password" required>
+    </div>
+    <button type="submit" class="btn">Sign in</button>
+  </form>
+
+  <div class="hint">
+    Demo accounts seeded on every restart — <code>admin</code> / <code>admin123</code> for the
+    admin console, <code>user</code> / <code>user123</code> for the evacuee-facing view.
+  </div>
+</div>
+
+<script>
+  (function () {
+    function getCookie(name) {
+      const match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+      return match ? decodeURIComponent(match[1]) : '';
+    }
+    document.getElementById('csrfInput').value = getCookie('XSRF-TOKEN');
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('error')) {
+      document.getElementById('errorBanner').style.display = 'block';
+    }
+    if (params.has('logout')) {
+      document.getElementById('logoutBanner').style.display = 'block';
+    }
+  })();
+</script>
+</body>
+</html>

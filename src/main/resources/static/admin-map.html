@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STRIDE — Admin Console</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<link rel="stylesheet" href="/css/stride-map.css">
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <div id="topbar">
+      <div>
+        <h1>STRIDE</h1>
+        <div class="subtitle">Admin Console</div>
+      </div>
+      <button id="signOutBtn">Sign out</button>
+    </div>
+
+    <div class="panel">
+      <h2>Session</h2>
+      <div class="stat-row"><span class="k">Session</span><span class="v" id="statSession">inactive</span></div>
+      <div class="stat-row"><span class="k">Committed platoons</span><span class="v" id="statPlatoons">0</span></div>
+      <div class="stat-row"><span class="k">People placed</span><span class="v" id="statPeople">0</span></div>
+      <div class="stat-row"><span class="k">Pending requests</span><span class="v" id="statPending">0</span></div>
+      <button class="btn btn-outline" id="reloadGraphBtn">Reload graph</button>
+    </div>
+
+    <div class="panel">
+      <h2>1 · Demo disaster</h2>
+      <div class="hint">Requests, hazards, and road blocks need a disaster + zone to reference. One is created on demand, or seed it explicitly.</div>
+      <button class="btn btn-ghost" id="seedDisasterBtn">Seed demo disaster + zone</button>
+      <div class="selection-tag empty" id="disasterTag">none yet</div>
+    </div>
+
+    <div class="panel">
+      <h2>2 · Seed random demand</h2>
+      <div class="hint">Adds N random evacuation requests across active nodes — useful for watching capacity contention spread across crossings.</div>
+      <div class="field"><label>Random requests</label><input type="number" id="randomCount" value="30" min="1" max="200"></div>
+      <button class="btn btn-outline" id="addRandomBtn">Seed N random requests</button>
+    </div>
+
+    <div class="panel">
+      <h2>3 · Dispatch</h2>
+      <button class="btn btn-primary" id="planBtn">Plan pending requests</button>
+      <div class="row">
+        <div class="field"><label>LNS iterations</label><input type="number" id="lnsIterations" value="20" min="1"></div>
+      </div>
+      <button class="btn btn-ghost" id="improveBtn">Run improvement pass</button>
+      <div id="shortfallList"></div>
+    </div>
+
+    <div class="panel">
+      <h2>4 · Hazard</h2>
+      <div class="hint">Click "place on map", then click a point for the hazard's origin.</div>
+      <button class="btn btn-outline" id="placeHazardBtn">Place hazard origin on map</button>
+      <div class="selection-tag empty" id="hazardTag">no origin selected</div>
+      <div class="field"><label>Type</label>
+        <select id="hazardType">
+          <option>FLOOD</option><option>EARTHQUAKE</option><option>CYCLONE</option><option>WILDFIRE</option>
+          <option>LANDSLIDE</option><option>TSUNAMI</option><option>INDUSTRIAL_ACCIDENT</option><option>OTHER</option>
+        </select>
+      </div>
+      <div class="row">
+        <div class="field"><label>Initial radius (m)</label><input type="number" id="hazardRadius" value="50" min="0"></div>
+        <div class="field"><label>Growth (m/min)</label><input type="number" id="hazardGrowth" value="40" min="1"></div>
+      </div>
+      <button class="btn btn-danger" id="postHazardBtn">Report hazard</button>
+      <div class="hint" style="margin-top:10px;">Active hazards — a real front recedes or gets contained, it doesn't just keep growing. Mark one resolved once it has, so routing can use the area again.</div>
+      <div id="activeHazardsList"></div>
+    </div>
+
+    <div class="panel">
+      <h2>5 · Block a road</h2>
+      <div class="hint">Click a road on the map to select it.</div>
+      <div class="selection-tag empty" id="edgeTag">no road selected</div>
+      <div class="field"><label>Reason</label>
+        <select id="blockReason">
+          <option>FLOODING</option><option>LANDSLIDE</option><option>DEBRIS</option>
+          <option>STRUCTURAL_COLLAPSE</option><option>FIRE</option><option>FALLEN_TREE</option>
+          <option>MILITARY_OR_POLICE_RESTRICTION</option><option>OTHER</option>
+        </select>
+      </div>
+      <button class="btn btn-danger" id="blockRoadBtn">Block selected road</button>
+      <div class="hint" style="margin-top:10px;">Active blocks — unblock once debris is cleared or the restriction lifts.</div>
+      <div id="activeBlockedRoadsList"></div>
+    </div>
+
+    <div class="panel">
+      <h2>6 · Shelters</h2>
+      <div class="hint">Click "place on map" for the shelter's location, then fill in its details.</div>
+      <button class="btn btn-outline" id="placeShelterBtn">Place shelter location on map</button>
+      <div class="selection-tag empty" id="shelterCoordTag">not set</div>
+      <div class="field"><label>Name</label><input type="text" id="shelterName"></div>
+      <div class="field"><label>Location description</label><input type="text" id="shelterLocation"></div>
+      <div class="row">
+        <div class="field"><label>Capacity</label><input type="number" id="shelterCapacity" value="200" min="1"></div>
+        <div class="field"><label>Contact</label><input type="text" id="shelterContact" placeholder="9876543210"></div>
+      </div>
+      <div class="checkbox-field"><input type="checkbox" id="shelterMedical"><label for="shelterMedical">Medical facility</label></div>
+      <div class="checkbox-field"><input type="checkbox" id="shelterFood"><label for="shelterFood">Food supply</label></div>
+      <div class="checkbox-field"><input type="checkbox" id="shelterWater"><label for="shelterWater">Water supply</label></div>
+      <button class="btn btn-primary" id="addShelterBtn">Add shelter</button>
+      <div id="shelterList"></div>
+    </div>
+
+    <div class="panel">
+      <h2>7 · All requests</h2>
+      <div class="field"><label>Status</label>
+        <select id="requestStatusFilter">
+          <option selected>PENDING</option><option>ASSIGNED</option><option>PROCESSING</option>
+          <option>COMPLETED</option><option>CANCELLED</option>
+        </select>
+      </div>
+      <button class="btn btn-outline" id="loadAllRequestsBtn">Load</button>
+      <div id="allRequestsList"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Legend</h2>
+      <div class="legend-item"><span class="swatch" style="background:#8399b5"></span> Road (clear)</div>
+      <div class="legend-item"><span class="swatch" style="background:var(--amber)"></span> Hazard onset soon</div>
+      <div class="legend-item"><span class="swatch" style="background:var(--coral)"></span> Lethal now</div>
+      <div class="legend-item"><span class="dot" style="background:var(--green)"></span> Shelter</div>
+      <div class="legend-item"><span class="swatch" style="background:var(--blue-500)"></span> Committed route</div>
+      <div class="legend-item"><span class="swatch" style="background:var(--coral);height:6px"></span> Just repaired</div>
+    </div>
+  </aside>
+
+  <div id="mapWrap">
+    <div id="map"></div>
+    <div id="toast"></div>
+    <div id="timebar">
+      <button id="playBtn">▶</button>
+      <input type="range" id="slider" min="0" max="160" value="0" step="1">
+      <span id="clockLabel">bucket 0</span>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="/js/stride-core.js"></script>
+<script src="/js/admin-map.js"></script>
+</body>
+</html>

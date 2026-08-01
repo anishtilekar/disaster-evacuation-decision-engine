@@ -30,6 +30,7 @@ import java.util.function.Predicate;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -189,11 +190,26 @@ class TimeExpandedDijkstraTest {
         TimeModel timeModel = defaultTimeModel();
         ReservationLedger ledger = new ReservationLedger(policy.snapshot(), timeModel, properties);
         return new TimeExpandedDijkstra(timeModel, properties)
-                .searchSpaceTime(policy, NODE_ORIGIN, 0, eligibility, false, ledger, 1);
+                .searchSpaceTime(policy, NODE_ORIGIN, 0, Destination.anyShelter(), eligibility, false,
+                        ledger, 1);
     }
 
     private boolean passesThrough(TimedWalk walk, int nodeIndex) {
         return walk.steps().stream().anyMatch(step -> step.to().nodeIndex() == nodeIndex);
+    }
+
+    /**
+     * A {@link Destination.FixedNode} search from the origin. The eligibility predicate always
+     * refuses, so a test failing here because a shelter sink fired anyway would mean the search is
+     * not actually ignoring it for a fixed target — the guard is deliberate, not an oversight.
+     */
+    private SearchResult searchToNodeFromOrigin(TraversalPolicy policy, int targetNodeIndex) {
+        GraphEngineProperties properties = new GraphEngineProperties();
+        TimeModel timeModel = defaultTimeModel();
+        ReservationLedger ledger = new ReservationLedger(policy.snapshot(), timeModel, properties);
+        return new TimeExpandedDijkstra(timeModel, properties).searchSpaceTime(
+                policy, NODE_ORIGIN, 0, new Destination.FixedNode(targetNodeIndex),
+                shelter -> false, false, ledger, 1);
     }
 
     @Test
@@ -326,5 +342,91 @@ class TimeExpandedDijkstraTest {
         assertTrue(result.feasible());
         // A liveness bound, not a benchmark — deliberately loose so a slow CI runner cannot flake it.
         assertTrue(elapsedMillis < 2000, "Search took " + elapsedMillis + " ms");
+    }
+
+    // --- Destination.FixedNode: routing to a chosen node rather than any eligible shelter ---
+
+    @Test
+    @DisplayName("A FixedNode search reaches exactly the target node, stopping short of the shelter beyond it")
+    void fixedNodeSearchReachesExactlyTheTargetNode() {
+        GraphSnapshot snapshot = buildDiamondSnapshot();
+        TraversalPolicy policy = new TraversalPolicy(snapshot, compileHazardFree(snapshot));
+
+        SearchResult result = searchToNodeFromOrigin(policy, NODE_B_RIVERSIDE);
+
+        assertTrue(result.feasible());
+        assertNull(result.shelter(), "a FixedNode search has no shelter to report");
+        TimedWalk walk = result.walk();
+        assertEquals(new SpaceTimeState(NODE_B_RIVERSIDE, 2), walk.arrival());
+        // Only the first leg of route B: the search stops at B itself rather than continuing to
+        // the shelter node one hop further on.
+        assertEquals(30.0, walk.totalCost(), EPSILON);
+    }
+
+    @Test
+    @DisplayName("A FixedNode search whose target is the origin returns a trivial feasible walk at zero cost")
+    void fixedNodeSearchAtOriginIsTrivial() {
+        GraphSnapshot snapshot = buildDiamondSnapshot();
+        TraversalPolicy policy = new TraversalPolicy(snapshot, compileHazardFree(snapshot));
+
+        SearchResult result = searchToNodeFromOrigin(policy, NODE_ORIGIN);
+
+        assertTrue(result.feasible());
+        assertNull(result.shelter());
+        TimedWalk walk = result.walk();
+        assertTrue(walk.steps().isEmpty());
+        assertEquals(new SpaceTimeState(NODE_ORIGIN, 0), walk.arrival());
+        assertEquals(0.0, walk.totalCost(), EPSILON);
+    }
+
+    @Test
+    @DisplayName("A FixedNode search to an unreachable node returns INFEASIBLE_WITHIN_HORIZON, not an exception")
+    void fixedNodeSearchToUnreachableNodeIsInfeasible() {
+        GraphSnapshot snapshot = buildDiamondSnapshot();
+        TraversalPolicy policy = new TraversalPolicy(snapshot, compileHazardFree(snapshot));
+        GraphEngineProperties properties = new GraphEngineProperties();
+        TimeModel timeModel = defaultTimeModel();
+        ReservationLedger ledger = new ReservationLedger(policy.snapshot(), timeModel, properties);
+
+        // The shelter node is a dead end — no outgoing edges — so nothing is reachable from it.
+        SearchResult result = new TimeExpandedDijkstra(timeModel, properties).searchSpaceTime(
+                policy, NODE_SHELTER, 0, new Destination.FixedNode(NODE_ORIGIN),
+                shelter -> false, false, ledger, 1);
+
+        assertFalse(result.feasible());
+        assertNull(result.shelter());
+        assertEquals(new SpaceTimeState(NODE_SHELTER, 0), result.walk().origin());
+        assertTrue(result.walk().steps().isEmpty());
+    }
+
+    @Test
+    @DisplayName("A FixedNode search to the shelter node still outruns the advancing flood via the inland detour")
+    void fixedNodeSearchStillRespectsHazardFeasibility() {
+        GraphSnapshot snapshot = buildDiamondSnapshot();
+
+        HazardEvent flood = HazardEvent.builder()
+                .hazardType(DisasterType.FLOOD)
+                .originLatitude(18.5000)
+                .originLongitude(73.8550)
+                .initialRadiusMeters(350.0)
+                .growthRateMetersPerMinute(20.0)
+                .leadingRiskBufferMeters(0.0)
+                .riskFactor(0.0)
+                .eventStartTime(LocalDateTime.now())
+                .active(true)
+                .build();
+
+        HazardTimeline timeline = compile(snapshot, List.of(), List.of(flood));
+        TraversalPolicy policy = new TraversalPolicy(snapshot, timeline);
+
+        // Same "outrun the flood" scenario as the shelter-search test above, but the destination is
+        // now the shelter's node itself, named directly rather than found via an eligibility predicate.
+        SearchResult result = searchToNodeFromOrigin(policy, NODE_SHELTER);
+
+        assertTrue(result.feasible());
+        assertNull(result.shelter());
+        assertTrue(passesThrough(result.walk(), NODE_A_INLAND));
+        assertFalse(passesThrough(result.walk(), NODE_B_RIVERSIDE));
+        assertEquals(ROUTE_A_COST_SECONDS, result.walk().totalCost(), EPSILON);
     }
 }

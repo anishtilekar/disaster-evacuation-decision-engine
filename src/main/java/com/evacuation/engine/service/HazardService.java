@@ -58,6 +58,15 @@ import java.util.List;
  * {@link ActivePlan#sessionEpoch()} anchors the recompile so bucket 0 does not silently move for
  * reservations already sitting in that session's ledger; with no session active, {@code now()} is
  * the honest epoch since there is nothing to stay consistent with.
+ *
+ * <p><strong>{@link #resolveHazard} is the capacity-restoring counterpart, and it never calls
+ * repair.</strong> A hazard front only ever grows in this model — see {@link HazardEvent}'s own
+ * Javadoc — so there is no way to tell the compiler "this flood has receded" short of retiring the
+ * event and recompiling without it. That is exactly what marking it inactive does. Same reasoning
+ * {@code GraphAdminService.unblockRoad} already documents for the identical shape of event: adding
+ * capacity or safety invalidates no existing plan, because every plan already committed was feasible
+ * without the thing being added back. The recompile still has to happen — it is what makes the
+ * cleared area usable by the next search — but no repair pass follows it.
  */
 @Service
 @Slf4j
@@ -155,5 +164,46 @@ public class HazardService {
 
         return new HazardTimelineResponse(timeline.graphVersion(), timeline.timelineVersion(),
                 timeline.builtAt(), horizon, edgeOnsets, nodeOnsets);
+    }
+
+    /**
+     * Every currently-active hazard — the admin console's list of fronts still in force, and what a
+     * "mark resolved" action is choosing among.
+     *
+     * @return active hazard events, response-mapped
+     */
+    @Transactional(readOnly = true)
+    public List<HazardEventResponse> listActiveHazards() {
+        return hazardEventRepository.findByActive(true).stream()
+                .map(hazardEventMapper::toResponse)
+                .toList();
+    }
+
+    /**
+     * Marks a hazard resolved (the flood receded, the fire was contained, the front dissipated) and
+     * republishes the timeline so the area it covered becomes usable again. See the class Javadoc for
+     * why this never triggers repair.
+     *
+     * @param hazardEventId the hazard to resolve
+     * @return the updated hazard event
+     * @throws IllegalArgumentException if no such hazard exists
+     */
+    @Transactional
+    public HazardEventResponse resolveHazard(Long hazardEventId) {
+        HazardEvent hazardEvent = hazardEventRepository.findById(hazardEventId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Hazard event " + hazardEventId + " not found"));
+
+        hazardEvent.setActive(Boolean.FALSE);
+        HazardEvent saved = hazardEventRepository.save(hazardEvent);
+
+        GraphSnapshot snapshot = graphCache.get();
+        LocalDateTime epoch = activePlan.isActive() ? activePlan.sessionEpoch() : LocalDateTime.now();
+        hazardTimelineCache.reload(snapshot, epoch);
+
+        log.info("Hazard event {} marked resolved; hazard timeline recompiled at epoch {}",
+                hazardEventId, epoch);
+
+        return hazardEventMapper.toResponse(saved);
     }
 }

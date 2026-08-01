@@ -1,5 +1,6 @@
 package com.evacuation.engine.sim;
 
+import com.evacuation.engine.algorithm.spacetime.Destination;
 import com.evacuation.engine.algorithm.spacetime.SearchResult;
 import com.evacuation.engine.algorithm.spacetime.TimeExpandedDijkstra;
 import com.evacuation.engine.config.GraphEngineProperties;
@@ -73,14 +74,14 @@ public final class IndependentDijkstraStrategy {
             ReservationLedger privateLedger = new ReservationLedger(snapshot, timeModel, properties);
 
             SearchResult result = timeExpandedDijkstra.searchSpaceTime(
-                    policy, party.originNodeIndex(), 0,
+                    policy, party.originNodeIndex(), 0, Destination.anyShelter(),
                     shelter -> shelter.status() == ShelterStatus.AVAILABLE,
                     party.medicalAssistanceRequired(), privateLedger, party.numberOfPeople());
 
             if (result.feasible()) {
                 committed.add(new DispatchResult(party.partyId(), platoonId++, 0,
                         party.numberOfPeople(), party.priority(),
-                        party.medicalAssistanceRequired(), result));
+                        party.medicalAssistanceRequired(), Destination.anyShelter(), result));
             } else {
                 shortfalls.add(new InstructionSet.Shortfall(
                         party.partyId(), party.numberOfPeople(), 0));

@@ -1,5 +1,7 @@
 package com.evacuation.engine.dispatch;
 
+import com.evacuation.engine.algorithm.AStarShortestPath;
+import com.evacuation.engine.algorithm.HaversineHeuristic;
 import com.evacuation.engine.algorithm.MultiTargetShelterSearch;
 import com.evacuation.engine.algorithm.spacetime.TimeExpandedDijkstra;
 import com.evacuation.engine.algorithm.spacetime.TimedWalk;
@@ -166,6 +168,7 @@ class DispatchServiceTest {
                 new ActivePlan(),
                 new TimeExpandedDijkstra(timeModel, properties),
                 new MultiTargetShelterSearch(),
+                new AStarShortestPath(new HaversineHeuristic(properties)),
                 timeModel,
                 properties);
     }

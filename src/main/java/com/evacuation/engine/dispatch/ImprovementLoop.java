@@ -1,6 +1,9 @@
 package com.evacuation.engine.dispatch;
 
+import com.evacuation.engine.algorithm.AStarShortestPath;
 import com.evacuation.engine.algorithm.MultiTargetShelterSearch;
+import com.evacuation.engine.algorithm.ShortestPathAlgorithm;
+import com.evacuation.engine.algorithm.spacetime.Destination;
 import com.evacuation.engine.algorithm.spacetime.SearchResult;
 import com.evacuation.engine.algorithm.spacetime.SpaceTimeState;
 import com.evacuation.engine.algorithm.spacetime.TimeExpandedDijkstra;
@@ -50,6 +53,7 @@ public class ImprovementLoop {
     private final ActivePlan activePlan;
     private final TimeExpandedDijkstra timeExpandedDijkstra;
     private final MultiTargetShelterSearch multiTargetShelterSearch;
+    private final AStarShortestPath aStarShortestPath;
     private final TimeModel timeModel;
 
     /**
@@ -141,7 +145,7 @@ public class ImprovementLoop {
 
             SpaceTimeState origin = target.searchResult().walk().origin();
             SearchResult replanned = timeExpandedDijkstra.searchSpaceTime(
-                    policy, origin.nodeIndex(), origin.bucket(), eligibility,
+                    policy, origin.nodeIndex(), origin.bucket(), target.destination(), eligibility,
                     target.medicalPreferred(), ledger, target.size());
 
             if (replanned.feasible()
@@ -150,7 +154,7 @@ public class ImprovementLoop {
 
                 DispatchResult candidate = new DispatchResult(
                         target.partyId(), target.platoonId(), target.waveIndex(), target.size(),
-                        target.priority(), target.medicalPreferred(), replanned);
+                        target.priority(), target.medicalPreferred(), target.destination(), replanned);
 
                 // The target is already out of the book, so this is everyone else plus the candidate.
                 List<DispatchResult> after = new ArrayList<>(planBook.all());
@@ -186,12 +190,7 @@ public class ImprovementLoop {
 
         for (DispatchResult result : committed) {
             TimedWalk walk = result.searchResult().walk();
-            MultiTargetShelterSearch.ShelterPathResult probe =
-                    multiTargetShelterSearch.findNearestEligibleShelter(
-                            snapshot, policy, walk.origin().nodeIndex(),
-                            shelter -> shelter.status() == ShelterStatus.AVAILABLE);
-
-            double bound = probe.reachable() ? probe.totalCost() : walk.totalCost();
+            double bound = freeFlowBound(result, walk, snapshot, policy);
             double regret = walk.totalCost() - bound;
             if (regret > worstRegret) {
                 worstRegret = regret;
@@ -201,6 +200,27 @@ public class ImprovementLoop {
         return worst;
     }
 
+    /**
+     * The free-flow cost bound a committed route is judged against: nearest-eligible-shelter for a
+     * shelter-routed platoon, or the direct {@link AStarShortestPath} cost to its own chosen node for
+     * a {@link Destination.FixedNode} platoon — probing the destination it actually committed to,
+     * never a shelter it was never trying to reach.
+     */
+    private double freeFlowBound(DispatchResult result, TimedWalk walk, GraphSnapshot snapshot,
+                                 TraversalPolicy policy) {
+        if (result.destination() instanceof Destination.FixedNode fixedNode) {
+            ShortestPathAlgorithm.PathResult probe = aStarShortestPath.findPath(
+                    snapshot, policy, walk.origin().nodeIndex(), fixedNode.targetNodeIndex());
+            return probe.reachable() ? probe.totalCost() : walk.totalCost();
+        }
+
+        MultiTargetShelterSearch.ShelterPathResult probe =
+                multiTargetShelterSearch.findNearestEligibleShelter(
+                        snapshot, policy, walk.origin().nodeIndex(),
+                        shelter -> shelter.status() == ShelterStatus.AVAILABLE);
+        return probe.reachable() ? probe.totalCost() : walk.totalCost();
+    }
+
     /** Same derive-don't-track shelter accounting as {@code DispatchService}/{@code RepairService}. */
     private Map<Long, Integer> computeShelterRemaining(GraphSnapshot snapshot, PlanBook planBook) {
         Map<Long, Integer> remaining = new HashMap<>();
@@ -208,7 +228,10 @@ public class ImprovementLoop {
             remaining.put(shelter.shelterId(), shelter.availableCapacity());
         }
         for (DispatchResult result : planBook.all()) {
-            remaining.merge(result.searchResult().shelter().shelterId(), -result.size(), Integer::sum);
+            GraphSnapshot.ShelterRef shelter = result.searchResult().shelter();
+            if (shelter != null) {
+                remaining.merge(shelter.shelterId(), -result.size(), Integer::sum);
+            }
         }
         return remaining;
     }

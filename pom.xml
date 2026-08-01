@@ -34,6 +34,12 @@ https://maven.apache.org/xsd/maven-4.0.0.xsd">
         <artifactId>spring-boot-starter-web</artifactId>
     </dependency>
 
+    <!-- Spring Security: authn/authz for the user/admin split (Part 2) -->
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-security</artifactId>
+    </dependency>
+
     <!-- Spring Data JPA -->
     <dependency>
         <groupId>org.springframework.boot</groupId>
@@ -72,6 +78,13 @@ https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <dependency>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-test</artifactId>
+        <scope>test</scope>
+    </dependency>
+
+    <!-- Spring Security test support (@WithMockUser, SecurityMockMvcRequestPostProcessors) -->
+    <dependency>
+        <groupId>org.springframework.security</groupId>
+        <artifactId>spring-security-test</artifactId>
         <scope>test</scope>
     </dependency>
 
