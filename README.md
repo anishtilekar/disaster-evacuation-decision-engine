@@ -8,6 +8,10 @@ A Java/Spring Boot backend that plans, and continuously replans, how to move rea
 ![Maven](https://img.shields.io/badge/Maven-C71A36?style=for-the-badge&logo=apache-maven&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)
 
+![STRIDE in action: dispatching evacuation routes across the live Shivajinagar–Ghole Road ward map](docs/media/dispatch-demo.gif)
+
+<sub>The admin console dispatching real routes across the Shivajinagar–Ghole Road ward, imported live from OpenStreetMap.</sub>
+
 Internally, the engine and its admin console are labelled **STRIDE**. That name is not expanded anywhere in the codebase, so this document uses it only as the project's identifier, not as an acronym.
 
 ---
@@ -70,7 +74,7 @@ Session-cookie authentication in front of both consoles; a successful sign-in ro
 <td width="50%">
 
 **Evacuee portal — self-service request**
-<img src="docs/media/screenshot-user-portal.png" alt="STRIDE evacuee portal: click-to-set origin/destination on the live Shivajinagar-Ghole Road map, then submit a request" width="100%">
+<img src="docs/media/screenshot-user-portal.jpg" alt="STRIDE evacuee portal: click-to-set origin/destination on the live Shivajinagar-Ghole Road map, then submit a request" width="100%">
 
 A citizen sets their location (and, optionally, a destination) directly on the real ward road network, then submits a request for routing.
 
@@ -80,7 +84,7 @@ A citizen sets their location (and, optionally, a destination) directly on the r
 <td width="50%">
 
 **Admin console — hazards and road blocks**
-<img src="docs/media/screenshot-admin-hazard.png" alt="STRIDE admin console: reporting an expanding hazard and blocking a road on the live map" width="100%">
+<img src="docs/media/screenshot-admin-hazard.jpg" alt="STRIDE admin console: reporting an expanding hazard and blocking a road on the live map" width="100%">
 
 An operator places a hazard's origin and growth rate, or blocks a specific road segment — both feed directly into the next dispatch or repair pass.
 
@@ -88,7 +92,7 @@ An operator places a hazard's origin and growth rate, or blocks a specific road 
 <td width="50%">
 
 **Admin console — shelter inventory**
-<img src="docs/media/screenshot-admin-shelters.png" alt="STRIDE admin console: shelter inventory with live availability and capacity, alongside the pending-request queue" width="100%">
+<img src="docs/media/screenshot-admin-shelters.jpg" alt="STRIDE admin console: shelter inventory with live availability and capacity, alongside the pending-request queue" width="100%">
 
 The full shelter inventory with live availability, plus the pending-request queue a dispatch pass will consume next.
 
@@ -493,9 +497,7 @@ Road block reports ───┘                                                �
 
 ## Simulation Demonstration
 
-![STRIDE admin console: dispatch and live map demo](docs/media/dispatch-demo.gif)
-
-The clip above shows the admin console in action. The sections below describe exactly what the project's built-in simulation/comparison tooling produces and how to reproduce it yourself.
+The [demo clip at the top of this README](#disaster-evacuation-decision-engine-stride) shows the admin console dispatching live routes. This section describes what the project's built-in simulation and comparison tooling measures, and how to reproduce it yourself.
 
 ### What the Simulation Demonstrates
 
