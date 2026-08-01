@@ -1,4 +1,4 @@
-# Disaster Evacuation Decision Engine (STRIDE)
+# STRIDE — Space-Time Reservation & Incremental Dispatch Engine
 
 A Java/Spring Boot backend that plans, and continuously replans, how to move real neighborhoods of people out of a disaster area — treating every road and junction as a shared, time-limited resource instead of routing each person as if they were alone on the map.
 
@@ -12,7 +12,7 @@ A Java/Spring Boot backend that plans, and continuously replans, how to move rea
 
 <sub>The admin console dispatching real routes across the Shivajinagar–Ghole Road ward, imported live from OpenStreetMap.</sub>
 
-Internally, the engine and its admin console are labelled **STRIDE**. That name is not expanded anywhere in the codebase, so this document uses it only as the project's identifier, not as an acronym.
+The name describes the architecture rather than decorating it. **Space-Time Reservation** is the shared ledger that records which road segment and junction is promised to whom in every 15-second bucket, so routes are checked against what the network can actually carry. **Incremental Dispatch** is the discipline of repairing only the platoons a disruption genuinely affects, instead of recomputing the whole plan every time a road closes or a hazard spreads. Both are explained in [Innovation / Novel Approach](#innovation--novel-approach).
 
 ---
 
@@ -48,7 +48,7 @@ Internally, the engine and its admin console are labelled **STRIDE**. That name 
 
 ## Project Overview
 
-The Disaster Evacuation Decision Engine is a backend system that decides **who should leave, by which road, in which group, at what time, and to which shelter** during a disaster — and keeps that plan honest as roads close and hazards spread.
+STRIDE is a disaster evacuation decision engine: a backend system that decides **who should leave, by which road, in which group, at what time, and to which shelter** during a disaster — and keeps that plan honest as roads close and hazards spread.
 
 It is built around one real ward of Pune, India (**Shivajinagar–Ghole Road**), whose road network is imported directly from OpenStreetMap rather than invented. On top of that real network sits a routing engine that reasons about *time* as well as *space*: a road is not just "open" or "blocked", it has a capacity per minute, and a plan that sends more people down it than it can hold in that minute is treated as infeasible, exactly like a plan that tries to cross a blocked road.
 
@@ -497,7 +497,7 @@ Road block reports ───┘                                                �
 
 ## Simulation Demonstration
 
-The [demo clip at the top of this README](#disaster-evacuation-decision-engine-stride) shows the admin console dispatching live routes. This section describes what the project's built-in simulation and comparison tooling measures, and how to reproduce it yourself.
+The demo clip at the top of this README shows the admin console dispatching live routes. This section describes what the project's built-in simulation and comparison tooling measures, and how to reproduce it yourself.
 
 ### What the Simulation Demonstrates
 
