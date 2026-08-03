@@ -1,6 +1,6 @@
 # STRIDE — Space-Time Reservation & Incremental Dispatch Engine
 
-A Java/Spring Boot backend that plans, and continuously replans, how to move real neighborhoods of people out of a disaster area — treating every road and junction as a shared, time-limited resource instead of routing each person as if they were alone on the map.
+A Java/Spring Boot backend that plans, and continuously replans, how to move real neighborhoods of people out of a disaster area — treating every road and junction as a shared, time-limited resource instead of routing each person as if they were alone on the map. LIVE DEMO : https://stride-evacuation-demo.onrender.com
 
 ![Java](https://img.shields.io/badge/Java-17-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white)
 ![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.5-6DB33F?style=for-the-badge&logo=spring-boot&logoColor=white)
